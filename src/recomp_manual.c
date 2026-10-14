@@ -329,9 +329,46 @@ void sub_003BF8CC(void)
     esp += 4;
 }
 
-/* Picture options (in-game rows not wired yet): no-op loader so main.c
- * links; the launcher's env file carries the renderer settings. */
-void game_options_load(void) { }
+/* ── Picture options (nfsmw_options.txt) ─────────────────────
+ * Written by the launcher (Graphics card): scale=100/150/200/250, fxaa=0/1,
+ * aniso=1..16. Loaded at boot into the Vulkan renderer. In-game rows (as
+ * Carbon's Options -> Gameplay) are not wired yet. Without scale= the
+ * renderer keeps RECOMP_GL_SCALE. */
+#ifdef NFSU2_VULKAN
+extern volatile int nv2a_vk_scale_pct;
+extern volatile int nv2a_vk_fxaa;
+extern volatile int nv2a_vk_aniso;
+#endif
+
+void game_options_load(void)
+{
+    char line[128];
+    FILE *f = fopen("nfsmw_options.txt", "r");
+    int scale = 0, fxaa = 0, aniso = 4;
+
+    if (f) {
+        while (fgets(line, sizeof line, f)) {
+            if (!strncmp(line, "fxaa=", 5))
+                fxaa = line[5] != '0';
+            else if (!strncmp(line, "aniso=", 6))
+                aniso = atoi(line + 6);
+            else if (!strncmp(line, "scale=", 6))
+                scale = atoi(line + 6);
+        }
+        fclose(f);
+    }
+    if (aniso < 1) aniso = 1;
+    if (aniso > 16) aniso = 16;
+#ifdef NFSU2_VULKAN
+    if (scale >= 50 && scale <= 400)
+        nv2a_vk_scale_pct = scale;
+    nv2a_vk_fxaa = fxaa;
+    nv2a_vk_aniso = aniso;
+#endif
+    fprintf(stderr, "[options] %s: scale %d%%, fxaa %s, anisotropic %dx\n",
+            f ? "nfsmw_options.txt" : "defaults", scale ? scale : 100,
+            fxaa ? "on" : "off", aniso);
+}
 
 /* ── Manual function overrides ─────────────────────────────── */
 

@@ -118,7 +118,7 @@ final class Settings {
         env.append("RECOMP_WIDESCREEN=").append(p.getBoolean(K_WIDESCREEN, false) ? 1 : 0).append('\n');
         if (p.getBoolean(K_STRETCH, false)) env.append("RECOMP_STRETCH=1\n");
         if (p.getBoolean(K_VK11, false)) env.append("RECOMP_VK_LEGACY=1\n");
-        if (p.getBoolean(K_FRAME_LOCK, false)) env.append("B3_FRAME_LOCK=1\n");
+        if (p.getBoolean(K_FRAME_LOCK, false)) env.append("NFSMW_FPS_CAP=30\n");
         env.append("RECOMP_AUDIO_VOLUME=").append(p.getInt(K_VOLUME, 100)).append('\n');
         env.append("RECOMP_PAD_MAP=").append(new File(dir, "nfsmw_padmap.txt").getAbsolutePath()).append('\n');
         if (p.getBoolean(K_DEBUG_LOG, false)) {

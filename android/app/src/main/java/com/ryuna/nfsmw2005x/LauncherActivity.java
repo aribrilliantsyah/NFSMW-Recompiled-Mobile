@@ -238,7 +238,7 @@ public class LauncherActivity extends Activity {
         body.addView(ui.summary("To test what each thing costs on your phone. The defaults are the recommended ones."));
         body.addView(ui.toggle("Vulkan 1.1 compatibility path", "Render passes instead of dynamic rendering. Used automatically on drivers that need it (Mali).",
                 mPrefs.getBoolean(Settings.K_VK11, false), v -> put(Settings.K_VK11, v)));
-        body.addView(ui.toggle("Lock game speed to frame rate", "Off: races keep real-time speed below 60 fps. On: the original one step per frame (slow motion when the phone cannot hold 60).",
+        body.addView(ui.toggle("30 fps cap in races", "Off: up to 60 fps. On: the original Xbox flip interval (30 fps in races, steadier on slow phones).",
                 mPrefs.getBoolean(Settings.K_FRAME_LOCK, false), v -> put(Settings.K_FRAME_LOCK, v)));
         body.addView(ui.toggle("Debug log", "Writes Android/data/com.ryuna.nfsmw2005x/files/nfsmw_log.txt for bug reports. Slower.",
                 mPrefs.getBoolean(Settings.K_DEBUG_LOG, false), v -> put(Settings.K_DEBUG_LOG, v)));
