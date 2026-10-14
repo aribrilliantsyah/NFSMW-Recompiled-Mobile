@@ -57,7 +57,24 @@ Two tools in `tools/` (both need the capstone venv):
 vblank to PGRAPH is 0x570 bytes apart, as in Carbon (0x362050 / 0x3625C0):
 the same D3D build.
 
-## Not done yet (needs a run, first on Linux, then the phones)
+## First Linux run (2026-10-15, RADV headless, 90 s)
+
+- Boots: 157/157 kernel thunks, APU and SDL audio up, OHCI pads, Vulkan
+  renderer ready. The BlockOnTime hook registers the GPU semaphore
+  (0x83C90000) and the fence event; the PGRAPH hook rewrites the first flip
+  interval (`[fps] flip interval 2 -> 1 vblank`). The game opens
+  `NFS/ZDIR.BIN`, `ZZDATA0..16.BIN` and creates `UDATA/4541007b/`.
+- No crash in 90 s. 10,494 `[ICALL] Failed` lines, nearly all one VA:
+  0x2DD01E, a function right after a `ret` with no padding that disasm did
+  not split off. tools.seed_from_log added 8 seeds (3 thread entries:
+  0x2B38A2, 0x2BC417, 0x2DFCBF; indirect targets 0x2C031F, 0x2DD01E,
+  0x31027D, 0x3C1CBE, 0x3C3087). Full regen with them.
+- `wbinvd` reached at 0x379174 (D3D) and 0xD45C0: a cache flush, a no-op
+  is right.
+- The Java ISO reader (XisoExtractor main) on this disc: 21 files, title
+  4541007B, every file md5-identical to tools.xiso's extraction.
+
+## Not done yet
 
 - First boot on Linux (`build/linux-vk`, lavapipe headless), then
   `[ICALL] Failed` / `[STUB]` triage and seeds into config/seed_functions.json.

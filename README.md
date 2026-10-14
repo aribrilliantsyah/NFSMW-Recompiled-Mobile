@@ -43,9 +43,10 @@ Android shell and renderer.
 Bring-up. The shell (launcher, ISO install, touch pad and editor, controller
 mapping, FPS overlay) and the Vulkan renderer with its Mali/Adreno fixes are
 the Burnout 3 port's, which runs on a Mali-G68 and an Adreno 610. The game
-side is new: the XDK hooks are in (see
-[docs/research/nfsmw-re.md](docs/research/nfsmw-re.md)); boot on the phones
-is the next step. Screenshots come once it runs on a phone.
+side is new: the XDK hooks are in and it boots on Linux (Vulkan up, game
+data streaming, flips at 60 fps pacing); see
+[docs/research/nfsmw-re.md](docs/research/nfsmw-re.md). Phones are next.
+Screenshots come once it runs on a phone.
 
 ## 🚀 Quick start
 
