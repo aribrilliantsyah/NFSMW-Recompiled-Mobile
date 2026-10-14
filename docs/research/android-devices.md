@@ -1,0 +1,165 @@
+# Test devices
+
+## Infinix X6815D (Dimensity 920 class)
+
+Identified with REA `list_adb_devices` + `inspect_adb_device` and `getprop`:
+
+| | |
+|---|---|
+| Serial | `095392531E002113` (USB) |
+| Model | Infinix X6815D (`X6815D-GL`) |
+| SoC | MediaTek MT6877V/TZA (`mt6877`, Dimensity 900/920 family), 8 cores, 2.0 / 2.5 GHz clusters |
+| GPU | Mali-G68 MC4, driver `v1.r32p1` (`ro.hardware.vulkan=mali`) |
+| Android | 13 (SDK 33), patch 2024-05-05, build `TP1A.220624.014`, user/release-keys |
+| Kernel | 4.19.191, page size 4096 |
+| RAM | 7.4 GB (`MemTotal 7748476 kB`) |
+| Storage | 226 GB, 19 GB free at first connection |
+| ABIs | arm64-v8a, armeabi-v7a, armeabi |
+
+### Results
+
+- `scripts/android/test-runtime.sh`: first run FAIL. Every fixed aperture
+  (0x80000000, 0xF0000000, 0xFD000000, 0xFE800000, 0xFF000000, extended VMA)
+  failed to map: the guest base lands just under the libraries where mmap
+  hands out space top-down, so base + guest VA was already taken. Fixed by
+  reserving the full 4 GB guest span (commit `0bde4d8`); all PASS since.
+- No game data: SDL message box "Failed to load default.xbe...", process
+  stays up, no tombstone.
+- The screen must be on and unlocked for SDLActivity to start the game
+  (`adb shell svc power stayon usb` keeps it awake on USB).
+- Game data pushed with `b3x.sh push-game` (719 files, ~2 min). adb pushes
+  as `shell` with mode 644; the app could not create
+  `UDATA\4541005b\TitleMeta.xbx` (STATUS_ACCESS_DENIED) and the title quit
+  via HalReturnToFirmware. push-game now skips UDATA/TDATA and makes the
+  tree group-writable.
+- **Boot runs** (2026-10-13): XBE loads, kernel thunks 147/147, APU and SDL
+  audio (OpenSL ES 48 kHz) up, guest threads run, the title streams the
+  intro movie and pushes NV2A command buffers; ~140% CPU, 266 MB RSS.
+- **Screen stays black: the Vulkan renderer cannot start.** The Mali-G68
+  driver (r32p1) is Vulkan **1.1.177** and lacks every extension nv2a_vk
+  requires: `VK_KHR_push_descriptor`, `VK_EXT_vertex_input_dynamic_state`,
+  `VK_KHR_dynamic_rendering`, `VK_EXT_extended_dynamic_state` (and Vulkan
+  1.3 itself). Log: `[VK] vkCreateDevice failed (needs push descriptors,
+  dynamic vertex input, Vulkan 1.3)`. Features: no BC textures (ETC2/ASTC
+  only), no logicOp, no dualSrcBlend, no shaderClipDistance, no
+  fillModeNonSolid. Full list: `adb shell cmd gpu vkjson`.
+
+## Mali-G68 bring-up result (2026-10-14)
+
+- nv2a_vk now has a Vulkan 1.1 path (render passes, descriptor sets,
+  state baked in pipelines), picked automatically when dynamic rendering,
+  push descriptors or dynamic vertex input are missing
+  (`RECOMP_VK_LEGACY=1` forces it on desktop for testing).
+- The Mali swapchain has 9 images (asked for 3); an index past the old
+  8-entry array crashed libGLES_mali in vkCmdPipelineBarrier.
+- FXAA's present pass also faulted in the driver: `RECOMP_VK_FXAA=0`
+  avoids it (FXAA defaults off anyway).
+- Surface rebuilt after home/resume.
+- Result: intro movies and the 'Press START' title render, ~1 core of CPU.
+
+## Playable on the Infinix (2026-10-14)
+
+Build `e2654f1` + the ☰ menu, internal resolution 2x, Drive touch layout:
+
+| Screen | fps | Notes |
+|---|---|---|
+| Intros, title, menus | 59-61 | |
+| Car select (garage) | 57 | lit garage, car reflections |
+| Race (Alpine, 6 cars) | 54-59 | GAS/steering/boost from the touch pad |
+
+- Profile load/save, race training video, race start and driving all work
+  with the touch pad only (screenshots in `docs/screenshots/android/`).
+- Random freezes (endless wait on the D3D fence event 0x0035F46C with the
+  GPU ring empty) fixed in `1a5fc1a`; not seen since in these sessions.
+- ☰ → Exit to launcher ends the `:game` process and returns to the
+  launcher; PLAY then starts a fresh game.
+- Not tested yet: a physical controller, tilt steering, FXAA on Mali.
+
+## Install from ISO (2026-10-14)
+
+`Burnout 3 - Takedown (USA).iso` (2,476,867,584 bytes, XISO at base 0) in
+`Download/`, picked with the system file picker: checked (title 4541005B),
+716 files / 2.36 GB extracted into `<app files>/game` in 8 s (~290 MB/s),
+`UDATA` saves kept, PLAY reaches Crash Nav at 60 fps. The same extractor
+on the PC gives files identical (md5) to xiso's `roms/game`.
+
+## POCO M3 (Snapdragon 662 / Adreno 610)
+
+Identified via `getprop` and `cmd gpu vkjson`:
+
+| | |
+|---|---|
+| Serial | `95ccec010621` (USB) |
+| Model | POCO M3 (`M2010J19CG`, board `citrus` / `chime`) |
+| SoC | Qualcomm Snapdragon 662 (`SM6115`, bengal), 8 cores (4x Kryo 260 Gold @ 2.0 GHz + 4x Kryo 260 Silver @ 1.8 GHz) |
+| GPU | Adreno 610, driver `512.658.0` / `0x80212000` (`ro.hardware.vulkan=adreno`) |
+| Android | 15 (SDK 35), RisingOS 6.2 / LineageOS 22, build `AP4A.250105.002` |
+| Kernel | 4.19.157-perf, page size 4096 |
+| RAM | 5.6 GB (`MemTotal 5873760 kB`) |
+| Storage | 128 GB, 81 GB free at first connection |
+| ABIs | arm64-v8a, armeabi-v7a, armeabi |
+
+### Results
+
+- `scripts/android/test-runtime.sh`: all PASS on first run (page size 4096, 28/28 mirrors mapped, guest base at 0x71f3178000).
+- Vulkan path: device supports Vulkan 1.3 core API with push descriptors, but lacks `VK_KHR_dynamic_rendering` and `VK_EXT_vertex_input_dynamic_state`. The engine automatically selects the Vulkan 1.1 fallback path (render passes, descriptor sets, baked pipeline state, swapchain of 4 images).
+- Game data pushed via `scripts/android/b3x.sh push-game` (716 files / 2.36 GB).
+- Playable at native 1x resolution (640x480) with full real-time clock speed (`B3_FRAME_LOCK=0`).
+
+### Playable on POCO M3 (2026-10-14)
+
+Build `27caa6a`, internal resolution 1x, Drive/Full touch layout:
+
+| Screen | fps | Notes |
+|---|---|---|
+| Loading / Intros | 58-60 | Initial loading screen at solid 60 fps |
+| Title screen | 58 | "Press START to continue" |
+| Main Menu / Select Option | 58 | World Tour, Single Event, etc. |
+| Career Hub (Crash Nav, Select Location/Event) | 51-54 | USA / Silver Lake map |
+| Car select (garage) | 56 | Underground lit garage, 3D car reflections |
+| Race Training Videos | 51-60 | Rules of the Road (51 fps), Impact Time (60 fps) |
+| Race (Silver Lake, 6 cars) | 36-44 | Full 3D rendering, spark particles, smoke, collisions |
+
+
+### Profiling the Adreno 610 (2026-10-14)
+
+Measured on the phone with `RECOMP_FPS_LOG=1` (the overlay fps, every 0.5 s)
+and `simpleperf record --app com.ryuna.b3x -e cpu-clock -g`, symbolised
+against the unstripped `build/android/libmain.so`. Silver Lake race, first
+straight at 128 mph, GAS held, 25 s window:
+
+| Build / setting | fps avg (min-max) | Notes |
+|---|---|---|
+| `833855a` (push descriptors on the 1.1 path) | 27.3 (19-36) | `vkCmdPushDescriptorSetKHR` 30% of the pushbuffer thread |
+| same, `RECOMP_VK_PUSH=0` | 32.7 (22-46) | |
+| `b64f764` (sets by default, no hitch clock) | 33.4-33.9 (23-46) | |
+| + depth in ATTACHMENT_OPTIMAL | 33.9 | GPU busy 85% either way: no gain, default stays GENERAL |
+| + host-cached ring | 33.9 | noise; dropped |
+| + `RECOMP_VK_ANISO=1` | 34.0 | aniso is not the cost |
+| + `RECOMP_CULL=1` | 27.1 (with CULL_CHECK) | no gain; off-screen draws are cheap |
+
+Where the time goes in a race (cpu-clock samples per thread):
+
+- **Guest thread** (lifted game code, ~29%): one Kryo 260 Gold core
+  (Cortex-A73 class, 2.0 GHz) busy. 11% of it is
+  `tlsdesc_resolver_dynamic`: every access to the register file
+  (`g_eax`... are `__thread`) goes through a TLS descriptor call because
+  libmain.so is a dlopen'ed library.
+- **Pushbuffer thread** (`nv2a_ack_thread` -> `vk_draw_raw`, ~30%): one
+  core busy. ~1000 draws and 16 render passes a frame; vertex upload
+  (memcpy into the ring), descriptor sets, and the Adreno driver's
+  command recording.
+- **APU thread** (`mcpx_apu_vp_frame`, ~13%).
+- **GPU**: `gpubusy` ~82-86% at 30-34 fps. At 1x, the 610 itself would
+  need roughly 2x the throughput for 60 fps in a race.
+
+Conclusion: the Snapdragon 662 is limited by both the A73-class CPU (two
+threads each near one core) and the Adreno 610 (85% busy at ~33 fps).
+Menus, garage and training videos reach 55-60 fps; races sit around
+30-35 fps. 60 fps in races on this SoC needs work on both sides (initial-exec
+TLS for the register file, fewer render passes/draws). That is beyond a
+setting. The Dimensity 920 (A78 2.5 GHz + Mali-G68 MC4) has about 2x the
+single-thread speed and GPU, which is why it holds 54-59.
+
+The earlier "races 36-44 fps" row was read from the overlay in a lighter
+part of the track; the table above is the heavy opening straight.
