@@ -58,7 +58,7 @@
         <!-- The game; landscape only (also forced in code: SDL would ask
              for FULL_USER for its resizable window). -->
         <activity
-            android:name=".B3xActivity"
+            android:name=".GameActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:screenOrientation="sensorLandscape"

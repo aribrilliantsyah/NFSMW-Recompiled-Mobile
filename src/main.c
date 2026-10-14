@@ -1,5 +1,5 @@
 /**
- * Burnout 3: Takedown (Xbox) - recompiled game entry point
+ * Need for Speed: Most Wanted (Xbox) - recompiled game entry point
  *
  * Boot order (same on every host):
  *   crash reporter -> load default.xbe -> xbox_MemoryLayoutInit ->
@@ -9,7 +9,7 @@
  * Game data is the extracted disc (default.xbe, Data/, Tracks/, ...). Where it is
  * looked for:
  *   Windows/Linux: $NFSU2_GAME_DIR, else ./game
- *   Switch:        sdmc:/switch/b3x/game
+ *   Switch:        sdmc:/switch/nfsmw/game
  */
 
 #ifdef _WIN32
@@ -61,12 +61,12 @@ extern void xbe_entry_point(void);
 extern int recomp_dispatch_init(void);
 extern void xbox_path_init(const char *game_dir, const char *save_dir);
 
-#define NFSU2_ENTRY_POINT 0x001D2807u
+#define NFSU2_ENTRY_POINT 0x002B3916u   /* NFSMW default.xbe entry */
 
 
 #if defined(__SWITCH__)
-#  define NFSU2_DEFAULT_GAME_DIR "sdmc:/switch/b3x/game"
-#  define NFSU2_DEFAULT_SAVE_DIR "sdmc:/switch/b3x/save"
+#  define NFSU2_DEFAULT_GAME_DIR "sdmc:/switch/nfsmw/game"
+#  define NFSU2_DEFAULT_SAVE_DIR "sdmc:/switch/nfsmw/save"
 #else
 #  define NFSU2_DEFAULT_GAME_DIR "game"
 #  define NFSU2_DEFAULT_SAVE_DIR NULL
@@ -230,13 +230,13 @@ static void fatal(const char *msg)
 {
     fprintf(stderr, "[FATAL] %s\n", msg);
 #if defined(_WIN32)
-    MessageBoxA(NULL, msg, "Burnout 3 recomp", MB_ICONERROR);
+    MessageBoxA(NULL, msg, "NFS Most Wanted recomp", MB_ICONERROR);
 #else
-    SDL_ShowSimpleMessageBox(0x10, "Burnout 3 recomp", msg, NULL);
+    SDL_ShowSimpleMessageBox(0x10, "NFS Most Wanted recomp", msg, NULL);
 #endif
 }
 
-int b3x_game_main(void);              /* also android_main.c's entry */
+int game_main(void);              /* also android_main.c's entry */
 void xbox_guest_pin(int interrupt);   /* win32_compat.c: the Xbox's one CPU */
 void xbox_gil_enter(void);             /* kernel_bridge.c: the guest lock */
 void xbox_gil_leave(void);
@@ -249,11 +249,11 @@ int main(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
-    return b3x_game_main();
+    return game_main();
 }
 #endif
 
-int b3x_game_main(void)
+int game_main(void)
 {
     xbox_guest_pin(0);     /* the boot thread becomes the title's first thread */
     char xbe_path[512];
@@ -264,7 +264,7 @@ int b3x_game_main(void)
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
 
-    printf("=== Burnout 3: Takedown (Xbox) - static recompilation ===\n");
+    printf("=== Need for Speed: Most Wanted (Xbox) - static recompilation ===\n");
     install_crash_reporter();
     if (getenv("NFSU2_EXIT_TRACE"))
         atexit(print_guest_state);
@@ -283,7 +283,7 @@ int b3x_game_main(void)
     setenv("RECOMP_USB", "1", 0);       /* the pad is on the MCPX's OHCI */
     setenv("RECOMP_PB_EXEC", "1", 0);   /* the title draws through NV2A */
     /* The executor's off-screen batch cull (an NFSU2 speed-up) drops draws
-     * Burnout needs: the car thumbnails at car select vanished with it on. */
+     * NFS Most Wanted needs: the car thumbnails at car select vanished with it on. */
     setenv("RECOMP_CULL", "0", 0);
     /* Particles (sparks, boost flames, light glows) are immediate quads with
      * world positions in fixed-function mode. */
@@ -291,7 +291,7 @@ int b3x_game_main(void)
 #endif
 #if defined(__SWITCH__)
     /* Every periodic log line flushes to the SD card; keep the log to what
-     * matters on a console. RECOMP_QUIET=0 in b3x_env.txt brings it back. */
+     * matters on a console. RECOMP_QUIET=0 in nfsmw_env.txt brings it back. */
     setenv("RECOMP_QUIET", "1", 0);
 #endif
 
@@ -374,8 +374,8 @@ int b3x_game_main(void)
     xbox_path_init(game_dir, NFSU2_DEFAULT_SAVE_DIR);
     xbox_kernel_bridge_init();
     {
-        extern void b3x_options_load(void);   /* recomp_manual.c: Gameplay picture rows */
-        b3x_options_load();
+        extern void game_options_load(void);   /* recomp_manual.c: Gameplay picture rows */
+        game_options_load();
     }
 
     g_esp = XBOX_STACK_TOP;

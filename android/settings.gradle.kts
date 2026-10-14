@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "b3x"
+rootProject.name = "nfsmw"
 include(":app")

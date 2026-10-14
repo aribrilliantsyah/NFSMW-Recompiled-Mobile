@@ -1,4 +1,4 @@
-package com.ryuna.b3x;
+package com.ryuna.nfsmw2005x;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -73,10 +73,10 @@ public class LauncherActivity extends Activity {
 
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.BOTTOM);
-        TextView title = ui.title("Burnout 3: Takedown");
+        TextView title = ui.title("Need for Speed: Most Wanted");
         title.setTextSize(26);
         head.addView(title);
-        TextView ver = ui.summary("  b3x " + versionName() + " · Xbox static recompilation");
+        TextView ver = ui.summary("  nfsmw " + versionName() + " · Xbox static recompilation");
         ver.setPadding(0, 0, 0, ui.dp(4));
         head.addView(ver);
         page.addView(head);
@@ -112,7 +112,7 @@ public class LauncherActivity extends Activity {
         // folder). With a game there, PLAY.
         mIsoBtn = ui.primary("INSTALL FROM ISO…", v -> pickIso());
         c.addView(mIsoBtn, new LinearLayout.LayoutParams(-1, -2));
-        mPlayHint = ui.summary("Pick your Burnout 3 disc image (.iso, Xbox NTSC-U). It is extracted once "
+        mPlayHint = ui.summary("Pick your NFS Most Wanted disc image (.iso, Xbox NTSC-U). It is extracted once "
                 + "into the app's folder (~2.4 GB); afterwards the .iso can be deleted. "
                 + "Extracted it on a PC already? Choose that folder below.");
         mPlayHint.setPadding(0, ui.dp(4), 0, ui.dp(10));
@@ -164,7 +164,7 @@ public class LauncherActivity extends Activity {
         c.addView(ui.secondary("Edit touch controls", v -> startActivity(new Intent(this, EditorActivity.class))));
         c.addView(ui.toggle("On-screen controller", null, mPrefs.getBoolean(Settings.K_PAD, true),
                 v -> put(Settings.K_PAD, v)));
-        c.addView(ui.segmented("Layout", "Full: the original Xbox controller. Drive: steering, pedals and boost.",
+        c.addView(ui.segmented("Layout", "Full: the original Xbox controller. Drive: steering, pedals, nitrous, e-brake, Speedbreaker.",
                 new String[] {"Full controller", "Drive"}, new int[] {Settings.MODE_FULL, Settings.MODE_STEERING},
                 mPrefs.getInt(Settings.K_PAD_MODE, Settings.MODE_STEERING), v -> put(Settings.K_PAD_MODE, v)));
         c.addView(ui.segmented("Steering (Drive layout)", "Stick: analog. Arrows: two big buttons. Tilt: turn the phone like a wheel.",
@@ -240,7 +240,7 @@ public class LauncherActivity extends Activity {
                 mPrefs.getBoolean(Settings.K_VK11, false), v -> put(Settings.K_VK11, v)));
         body.addView(ui.toggle("Lock game speed to frame rate", "Off: races keep real-time speed below 60 fps. On: the original one step per frame (slow motion when the phone cannot hold 60).",
                 mPrefs.getBoolean(Settings.K_FRAME_LOCK, false), v -> put(Settings.K_FRAME_LOCK, v)));
-        body.addView(ui.toggle("Debug log", "Writes Android/data/com.ryuna.b3x/files/b3x_log.txt for bug reports. Slower.",
+        body.addView(ui.toggle("Debug log", "Writes Android/data/com.ryuna.nfsmw2005x/files/nfsmw_log.txt for bug reports. Slower.",
                 mPrefs.getBoolean(Settings.K_DEBUG_LOG, false), v -> put(Settings.K_DEBUG_LOG, v)));
         c.addView(body);
         head.setOnClickListener(v -> {
@@ -390,8 +390,8 @@ public class LauncherActivity extends Activity {
         if (x.find("default.xbe") == null || title != XisoExtractor.TITLE_ID) {
             closeQuietly(pfd);
             alert("Wrong game", title == 0 ? "This image has no default.xbe."
-                    : String.format("This image is title %08X. b3x needs Burnout 3: Takedown, "
-                    + "Xbox NTSC-U (title 4541005B).", title));
+                    : String.format("This image is title %08X. nfsmw needs Need for Speed: Most Wanted, "
+                    + "Xbox NTSC-U (title 4541007B).", title));
             return;
         }
         File root = Settings.filesDir(this);
@@ -421,7 +421,7 @@ public class LauncherActivity extends Activity {
         mCancelExtract = false;
         android.app.AlertDialog dlg = new android.app.AlertDialog.Builder(this,
                 android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("Installing Burnout 3")
+            .setTitle("Installing NFS Most Wanted")
             .setView(box)
             .setCancelable(false)
             .setNegativeButton("Cancel", null)
@@ -537,7 +537,7 @@ public class LauncherActivity extends Activity {
         saveDir(path);
     }
 
-    /** "primary:Games/Burnout3" -> /storage/emulated/0/Games/Burnout3;
+    /** "primary:Games/NFSMW" -> /storage/emulated/0/Games/NFSMW;
      *  "1234-ABCD:x" -> /storage/1234-ABCD/x. */
     private static String treeToPath(Uri tree) {
         String id;
@@ -564,6 +564,6 @@ public class LauncherActivity extends Activity {
             Toast.makeText(this, "Cannot save settings: " + e.getMessage(), Toast.LENGTH_LONG).show();
             return;
         }
-        startActivity(new Intent(this, B3xActivity.class));
+        startActivity(new Intent(this, GameActivity.class));
     }
 }

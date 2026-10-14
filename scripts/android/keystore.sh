@@ -3,7 +3,7 @@
 #
 #   scripts/android/keystore.sh
 #
-# Writes ~/.android-keys/b3x-release.jks and android/keystore.properties
+# Writes ~/.android-keys/nfsmw-release.jks and android/keystore.properties
 # (git-ignored). keytool asks for the passwords in this terminal; they end
 # up only in keystore.properties on this machine.
 #
@@ -12,10 +12,10 @@
 # old one.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
-DIR="${B3X_KEY_DIR:-$HOME/.android-keys}"
-JKS="$DIR/b3x-release.jks"
+DIR="${NFSMW_KEY_DIR:-$HOME/.android-keys}"
+JKS="$DIR/nfsmw-release.jks"
 PROPS="$HERE/android/keystore.properties"
-ALIAS=b3x
+ALIAS=nfsmw
 
 if [ -f "$JKS" ]; then
     echo "[keystore] $JKS already exists; not replacing it."
@@ -25,7 +25,7 @@ else
     echo "[keystore] creating $JKS (choose a password, at least 6 characters)"
     keytool -genkeypair -v -keystore "$JKS" -alias "$ALIAS" \
         -keyalg RSA -keysize 4096 -validity 10000 \
-        -dname "CN=b3x, O=ryuna, C=ID"
+        -dname "CN=nfsmw, O=ryuna, C=ID"
     chmod 600 "$JKS"
 fi
 

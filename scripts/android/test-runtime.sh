@@ -14,7 +14,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NDK_VERSION="${NDK_VERSION:-28.2.13676358}"
 DEPS="$HERE/.work/android-deps/arm64-v8a"
 TC="$ANDROID_HOME/ndk/$NDK_VERSION/build/cmake/android.toolchain.cmake"
-REMOTE=/data/local/tmp/b3x-tests
+REMOTE=/data/local/tmp/nfsmw-tests
 SERIAL="${ANDROID_SERIAL:-}"
 [ "${1:-}" = "-s" ] && SERIAL="$2"
 

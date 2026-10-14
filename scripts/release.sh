@@ -15,7 +15,7 @@
 #
 # Steps: check the tree is clean -> new version into
 # android/version.properties -> CHANGELOG [Unreleased] becomes the version
-# section -> native + signed release APK -> dist/b3x-<v>.apk + .sha256 ->
+# section -> native + signed release APK -> dist/nfsmw-<v>.apk + .sha256 ->
 # commit "Release <v>", tag v<v> -> push -> GitHub Release with the APK.
 #
 # Why local: libmain.so is compiled from C lifted out of default.xbe, which
@@ -104,26 +104,26 @@ EOF
 CMDS=(apk)
 [ "$NATIVE" = 1 ] && CMDS=(native apk)
 say "building: ${CMDS[*]} (release)"
-scripts/android/b3x.sh --release "${CMDS[@]}"
+scripts/android/nfsmw.sh --release "${CMDS[@]}"
 APK=android/app/build/outputs/apk/release/app-release.apk
 [ -f "$APK" ] || die "no $APK"
 
 BT="$(ls -d "${ANDROID_HOME:-$HOME/Documents/Repos/Android/SDK}"/build-tools/* | sort -V | tail -1)"
-"$BT/apksigner" verify --print-certs "$APK" | grep -q "CN=b3x" \
+"$BT/apksigner" verify --print-certs "$APK" | grep -q "CN=nfsmw" \
     || die "$APK is not signed with the release key"
 "$BT/aapt2" dump badging "$APK" | grep -q "versionName='$NEW'" \
     || die "$APK does not carry versionName $NEW"
 
 mkdir -p dist
-OUT="dist/b3x-$NEW.apk"
+OUT="dist/nfsmw-$NEW.apk"
 cp "$APK" "$OUT"
-(cd dist && sha256sum "b3x-$NEW.apk" > "b3x-$NEW.apk.sha256")
+(cd dist && sha256sum "nfsmw-$NEW.apk" > "nfsmw-$NEW.apk.sha256")
 say "$OUT ($(du -h "$OUT" | cut -f1)), $(cut -c1-16 "$OUT.sha256")…"
 
 # ------------------------------------------------------------ git
 git add "$VFILE" CHANGELOG.md
 git commit -q -m "Release $NEW"
-git tag -a "$TAG" -m "b3x $NEW"
+git tag -a "$TAG" -m "nfsmw $NEW"
 say "committed and tagged $TAG"
 
 if [ "$PUBLISH" = 0 ]; then
@@ -134,9 +134,9 @@ fi
 git push origin HEAD "$TAG"
 {
     cat "$NOTES"
-    printf '\n---\n\nInstall **b3x-%s.apk** (arm64, Android 11+, Vulkan). You need your own\n' "$NEW"
-    printf 'Burnout 3: Takedown (Xbox, NTSC-U) disc image: open the app, *INSTALL FROM ISO…*.\n'
+    printf '\n---\n\nInstall **nfsmw-%s.apk** (arm64, Android 11+, Vulkan). You need your own\n' "$NEW"
+    printf 'Need for Speed: Most Wanted (Xbox, NTSC-U) disc image: open the app, *INSTALL FROM ISO…*.\n'
     printf 'No game data is included.\n\nSHA-256: `%s`\n' "$(cut -d' ' -f1 "$OUT.sha256")"
 } > "$NOTES.md"
-gh release create "$TAG" "$OUT" "$OUT.sha256" --title "b3x $NEW" -F "$NOTES.md" $DRAFT
+gh release create "$TAG" "$OUT" "$OUT.sha256" --title "nfsmw $NEW" -F "$NOTES.md" $DRAFT
 say "published $TAG"

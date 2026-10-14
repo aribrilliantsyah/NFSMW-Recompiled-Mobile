@@ -5,8 +5,8 @@
 #
 # Environment:
 #   XBOXRECOMP_DIR  toolkit            (default: the vendored xboxrecomp/)
-#   B3_XBE       default.xbe        (default: <repo>/roms/game/default.xbe)
-#   B3_GEN_DIR   output directory   (default: <repo>/.work/gen)
+#   NFSMW_XBE       default.xbe        (default: <repo>/roms/game/default.xbe)
+#   NFSMW_GEN_DIR   output directory   (default: <repo>/.work/gen)
 #   PYTHON       interpreter with capstone (default: <repo>/.work/venv/bin/python
 #                when present, else python3; pip install -r tools/requirements.txt)
 #   LIFT_ONLY=1     skip disasm/func_id/abi (enough after editing
@@ -24,8 +24,8 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TK="${XBOXRECOMP_DIR:-$HERE/xboxrecomp}"
-XBE="${B3_XBE:-$HERE/roms/game/default.xbe}"
-GEN="${B3_GEN_DIR:-$HERE/.work/gen}"
+XBE="${NFSMW_XBE:-$HERE/roms/game/default.xbe}"
+GEN="${NFSMW_GEN_DIR:-$HERE/.work/gen}"
 if [ -z "${PYTHON:-}" ]; then
     if [ -x "$HERE/.work/venv/bin/python" ]; then PYTHON="$HERE/.work/venv/bin/python"; else PYTHON=python3; fi
 fi
@@ -43,7 +43,7 @@ mkdir -p "$GEN"
 # recomp_types.h is written only when absent, so a stale copy would hide
 # register-model changes in the toolkit. Nothing here edits it by hand.
 rm -f "$GEN/recomp_types.h"
-"$PYTHON" -m tools.recomp "$XBE" --game-name "Burnout 3" --all --split 250 \
+"$PYTHON" -m tools.recomp "$XBE" --game-name "NFS Most Wanted" --all --split 250 \
     --gen-dir "$GEN" --exclude-manual "$HERE/src/recomp_manual.c" \
     --mmio-sections DSOUND,XPP,D3D,XGRPH \
     ${TRACE_FUNCS:+--trace-functions "$TRACE_FUNCS"}

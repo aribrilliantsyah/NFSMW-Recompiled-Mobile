@@ -1,16 +1,16 @@
 /*
- * android_main.c -- Android entry for the Burnout 3 recompilation.
+ * android_main.c -- Android entry for the NFS Most Wanted recompilation.
  *
  * SDLActivity loads libSDL2.so and libmain.so and calls SDL_main on its
  * own thread. This file only does what a phone lacks compared to a desktop:
  *
- *   logs      stdout/stderr go to logcat (tag "b3x") through a pipe, so
+ *   logs      stdout/stderr go to logcat (tag "nfsmw") through a pipe, so
  *             every printf of the runtime shows up in `adb logcat`
- *   settings  b3x_env.txt in the app's external files directory,
+ *   settings  nfsmw_env.txt in the app's external files directory,
  *             KEY=VALUE per line, '#' comments -- an app has no shell
  *             environment; an explicit setting there wins over defaults
  *   paths     the game directory defaults to <external files>/game and the
- *             process runs from <external files> (b3x_options.txt, saves)
+ *             process runs from <external files> (nfsmw_options.txt, saves)
  *   stack     the game runs on a thread with a 16 MB stack, like a desktop
  *             main thread (recompiled code is stack hungry)
  */
@@ -27,21 +27,21 @@
 #include <SDL.h>
 #include <SDL_main.h>
 
-#define B3X_TAG "b3x"
+#define NFSMW_TAG "nfsmw"
 
-int b3x_game_main(void);   /* main.c */
+int game_main(void);   /* main.c */
 
 #include <jni.h>
 
 /* ------------------------------------------------------------------ */
-/* Java side (B3xActivity, the touch overlay)                         */
+/* Java side (GameActivity, the touch overlay)                         */
 
 extern void xbox_InputSetVirtual(int buttons, int face, int lt, int rt, int lx, int ly);
 extern void xbox_InputSetVirtualRight(int rx, int ry);
 extern void xbox_InputSetRumbleSink(void (*sink)(int left, int right));
 extern volatile float nv2a_vk_fps;
 
-/* Rumble with no physical pad: B3xActivity.rumble(left, right), 0..65535,
+/* Rumble with no physical pad: GameActivity.rumble(left, right), 0..65535,
  * on the game thread (SDL attaches it to the VM). The class is taken from
  * the first nativeSetPad call: FindClass on a native thread cannot see app
  * classes. Only changes are sent; the game re-sends every frame. */
@@ -62,7 +62,7 @@ static void rumble_sink(int left, int right)
 }
 
 JNIEXPORT void JNICALL
-Java_com_ryuna_b3x_B3xActivity_nativeSetPad(JNIEnv *env, jclass cls, jint buttons, jint face,
+Java_com_ryuna_nfsmw2005x_GameActivity_nativeSetPad(JNIEnv *env, jclass cls, jint buttons, jint face,
                                             jint lt, jint rt, jint lx, jint ly)
 {
     if (!s_act_cls) {
@@ -78,14 +78,14 @@ Java_com_ryuna_b3x_B3xActivity_nativeSetPad(JNIEnv *env, jclass cls, jint button
 }
 
 JNIEXPORT void JNICALL
-Java_com_ryuna_b3x_B3xActivity_nativeSetPadRight(JNIEnv *env, jclass cls, jint rx, jint ry)
+Java_com_ryuna_nfsmw2005x_GameActivity_nativeSetPadRight(JNIEnv *env, jclass cls, jint rx, jint ry)
 {
     (void)env; (void)cls;
     xbox_InputSetVirtualRight(rx, ry);
 }
 
 JNIEXPORT jfloat JNICALL
-Java_com_ryuna_b3x_B3xActivity_nativeGetFps(JNIEnv *env, jclass cls)
+Java_com_ryuna_nfsmw2005x_GameActivity_nativeGetFps(JNIEnv *env, jclass cls)
 {
     (void)env; (void)cls;
     return nv2a_vk_fps;
@@ -95,7 +95,7 @@ Java_com_ryuna_b3x_B3xActivity_nativeGetFps(JNIEnv *env, jclass cls)
 /* stdout/stderr -> logcat                                            */
 
 static int s_log_pipe[2];
-static FILE *s_log_file;     /* b3x_log.txt when B3X_LOG_FILE=1 */
+static FILE *s_log_file;     /* nfsmw_log.txt when NFSMW_LOG_FILE=1 */
 
 static void *log_thread(void *arg)
 {
@@ -119,12 +119,12 @@ static void *log_thread(void *arg)
                 fprintf(s_log_file, "%5ld.%03ld %s\n", (long)t.tv_sec, t.tv_nsec / 1000000, start);
                 fflush(s_log_file);
             }
-            __android_log_write(ANDROID_LOG_INFO, B3X_TAG, start);
+            __android_log_write(ANDROID_LOG_INFO, NFSMW_TAG, start);
             start = nl + 1;
         }
         used = strlen(start);
         if (used == sizeof(buf) - 1) {
-            __android_log_write(ANDROID_LOG_INFO, B3X_TAG, start);
+            __android_log_write(ANDROID_LOG_INFO, NFSMW_TAG, start);
             used = 0;
         } else {
             memmove(buf, start, used);
@@ -147,7 +147,7 @@ static void redirect_stdio_to_logcat(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* b3x_env.txt                                                        */
+/* nfsmw_env.txt                                                        */
 
 static void load_env_file(const char *dir, const char *name)
 {
@@ -178,7 +178,7 @@ static void load_env_file(const char *dir, const char *name)
 
 static void *game_thread(void *arg)
 {
-    *(int *)arg = b3x_game_main();
+    *(int *)arg = game_main();
     return NULL;
 }
 
@@ -199,24 +199,24 @@ int SDL_main(int argc, char **argv)
 
     ext = SDL_AndroidGetExternalStoragePath();
     if (!ext) {
-        __android_log_print(ANDROID_LOG_ERROR, B3X_TAG,
+        __android_log_print(ANDROID_LOG_ERROR, NFSMW_TAG,
                             "no external files directory: %s", SDL_GetError());
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Burnout 3",
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "NFS Most Wanted",
                                  "The app's storage is not available.", NULL);
         return 1;
     }
     printf("[android] files: %s\n", ext);
     if (chdir(ext) != 0)
         printf("[android] chdir %s failed\n", ext);
-    /* Launcher settings first, then the developer's b3x_env.txt over them. */
-    load_env_file(ext, "b3x_launcher.txt");
-    load_env_file(ext, "b3x_env.txt");
+    /* Launcher settings first, then the developer's nfsmw_env.txt over them. */
+    load_env_file(ext, "nfsmw_launcher.txt");
+    load_env_file(ext, "nfsmw_env.txt");
     {
         /* The whole log in a file too: logcat's ring is gone in minutes. */
-        const char *e = getenv("B3X_LOG_FILE");
+        const char *e = getenv("NFSMW_LOG_FILE");
         if (e && *e == '1') {
             char path[600];
-            snprintf(path, sizeof path, "%s/b3x_log.txt", ext);
+            snprintf(path, sizeof path, "%s/nfsmw_log.txt", ext);
             s_log_file = fopen(path, "w");
             if (s_log_file)
                 printf("[android] logging to %s\n", path);

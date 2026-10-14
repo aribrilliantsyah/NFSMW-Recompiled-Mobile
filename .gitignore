@@ -65,7 +65,7 @@ gen/
 xboxrecomp/tools/*/output/
 
 # From upstream
-Burnout 3 Takedown/
+NFS Most Wanted/
 build-xr/
 saves/
 runs/
@@ -93,9 +93,13 @@ progcache.bin
 vkpipecache.bin
 vkpipes.bin
 vkspirv.bin
-b3x_options.txt
-b3x_env.txt
+nfsmw_options.txt
+nfsmw_env.txt
 android/keystore.properties
 *.jks
 *.keystore
 dist/
+
+# NFSMW port
+nfsmw_options.txt
+nfsmw_env.txt

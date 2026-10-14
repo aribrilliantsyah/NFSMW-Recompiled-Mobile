@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build Burnout 3 for Android and drive it on a connected phone.
+# Build NFS Most Wanted for Android and drive it on a connected phone.
 #
-#   scripts/android/b3x.sh [-s SERIAL] [--release] <cmd>...
+#   scripts/android/nfsmw.sh [-s SERIAL] [--release] <cmd>...
 #
 # Commands run in the order given:
 #   deps       build SDL2 + glslang for arm64-v8a (scripts/android/deps.sh)
@@ -10,7 +10,7 @@
 #   install    adb install -r the APK
 #   push-game  dev only: copy roms/game/ to the app's files/game/ (skips
 #              files already there with the same size)
-#   env        push ./b3x_env.txt to the app's files directory
+#   env        push ./nfsmw_env.txt to the app's files directory
 #   run        start the app
 #   log        follow logcat for the app (Ctrl-C to stop)
 #   stop       force-stop the app
@@ -29,8 +29,8 @@ export ANDROID_HOME
 NDK_VERSION="${NDK_VERSION:-28.2.13676358}"
 JOBS="${JOBS:-3}"
 GEN="${NFSU2_GEN_DIR:-$HERE/.work/gen}"
-PKG=com.ryuna.b3x
-ACTIVITY=.B3xActivity
+PKG=com.ryuna.nfsmw2005x
+ACTIVITY=.GameActivity
 ABI=arm64-v8a
 DEPS="$HERE/.work/android-deps/$ABI"
 BUILD="$HERE/build/android"
@@ -39,8 +39,8 @@ DEVICE_FILES="/sdcard/Android/data/$PKG/files"
 VARIANT=debug
 SERIAL="${ANDROID_SERIAL:-}"
 
-say() { echo "[b3x] $*"; }
-die() { local code="$1"; shift; echo "[b3x] error: $*" >&2; exit "$code"; }
+say() { echo "[nfsmw] $*"; }
+die() { local code="$1"; shift; echo "[nfsmw] error: $*" >&2; exit "$code"; }
 
 usage() { sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
@@ -152,9 +152,9 @@ cmd_push_game() {
 
 cmd_env() {
     pick_device
-    [ -f "$HERE/b3x_env.txt" ] || die 1 "no b3x_env.txt in $HERE"
+    [ -f "$HERE/nfsmw_env.txt" ] || die 1 "no nfsmw_env.txt in $HERE"
     ADB shell mkdir -p "$DEVICE_FILES"
-    ADB push "$HERE/b3x_env.txt" "$DEVICE_FILES/b3x_env.txt" >/dev/null
+    ADB push "$HERE/nfsmw_env.txt" "$DEVICE_FILES/nfsmw_env.txt" >/dev/null
 }
 
 cmd_run() {
@@ -165,7 +165,7 @@ cmd_run() {
 
 cmd_log() {
     pick_device
-    ADB logcat -v time b3x:V SDL:V SDL/APP:V DEBUG:V libc:V AndroidRuntime:E vulkan:V '*:S'
+    ADB logcat -v time nfsmw:V SDL:V SDL/APP:V DEBUG:V libc:V AndroidRuntime:E vulkan:V '*:S'
 }
 
 cmd_stop() {
@@ -182,7 +182,7 @@ while [ $# -gt 0 ]; do
         -h|--help) usage 0 ;;
         all) CMDS+=(deps native apk install run log); shift ;;
         deps|native|apk|install|push-game|env|run|log|stop) CMDS+=("$1"); shift ;;
-        *) echo "[b3x] unknown command: $1" >&2; usage 1 ;;
+        *) echo "[nfsmw] unknown command: $1" >&2; usage 1 ;;
     esac
 done
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 # ============================================================================
-# Burnout 3: Takedown (Xbox, NTSC-U) - Static Recompilation
+# Need for Speed: Most Wanted (Xbox, NTSC-U) - Static Recompilation
 #
 # Hosts: Linux (GCC, SDL2 + OpenGL or Vulkan) as the development host, and
 # Android (NDK, arm64-v8a, Vulkan). Windows (MSVC, D3D11) is upstream's.
@@ -119,7 +119,7 @@ endif()
 
 # ── Android (NDK, arm64-v8a) ────────────────────────────────────
 #
-# Built by scripts/android/b3x.sh; the Gradle app in android/ packages
+# Built by scripts/android/nfsmw.sh; the Gradle app in android/ packages
 # libmain.so with libSDL2.so. 16 KB page alignment for Android 15+ kernels.
 if(ANDROID)
     find_package(SDL2 CONFIG REQUIRED)

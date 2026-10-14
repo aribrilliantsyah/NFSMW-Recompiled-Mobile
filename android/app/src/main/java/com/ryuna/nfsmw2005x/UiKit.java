@@ -1,4 +1,4 @@
-package com.ryuna.b3x;
+package com.ryuna.nfsmw2005x;
 
 import android.content.Context;
 import android.graphics.Color;
@@ -27,7 +27,7 @@ import java.util.function.IntFunction;
  */
 final class UiKit {
     static final int BG = 0xFF121212, CARD = 0xFF1E1E1E, PANEL = 0xFF262626, LINE = 0xFF333333;
-    static final int FG = 0xFFEDEDED, DIM = 0xFF9A9A9A, ACCENT = 0xFFE5534B, OK = 0xFF3FB950;
+    static final int FG = 0xFFEDEDED, DIM = 0xFF9A9A9A, ACCENT = 0xFF6F7432, OK = 0xFF3FB950;
 
     private final Context c;
 
@@ -154,7 +154,7 @@ final class UiKit {
     View toggle(String title, String summary, boolean on, Consumer<Boolean> set) {
         Switch s = new Switch(c);
         s.setThumbTintList(states(ACCENT, 0xFFBDBDBD));
-        s.setTrackTintList(states(0x99E5534B, 0xFF4A4A4A));
+        s.setTrackTintList(states(0x996F7432, 0xFF4A4A4A));
         s.setChecked(on);
         s.setOnCheckedChangeListener((v, b) -> set.accept(b));
         LinearLayout r = row(title, summary, s);

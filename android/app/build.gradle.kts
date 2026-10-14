@@ -1,5 +1,5 @@
 // The Android shell around the recompiled game. The native code
-// (libmain.so, libSDL2.so) is built by scripts/android/b3x.sh and copied
+// (libmain.so, libSDL2.so) is built by scripts/android/nfsmw.sh and copied
 // into src/main/jniLibs/arm64-v8a/ (git-ignored) before Gradle runs.
 plugins {
     id("com.android.application")
@@ -25,11 +25,11 @@ val versionCodeFromName = versionParts[0] * 10000 + versionParts[1] * 100 + vers
 val keystore = props("keystore.properties")
 
 android {
-    namespace = "com.ryuna.b3x"
+    namespace = "com.ryuna.nfsmw2005x"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.ryuna.b3x"
+        applicationId = "com.ryuna.nfsmw2005x"
         minSdk = 30
         targetSdk = 36
         versionCode = versionCodeFromName

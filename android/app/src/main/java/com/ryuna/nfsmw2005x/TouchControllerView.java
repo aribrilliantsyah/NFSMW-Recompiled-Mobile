@@ -1,4 +1,4 @@
-package com.ryuna.b3x;
+package com.ryuna.nfsmw2005x;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Touch controller over the game (B3xActivity) or alone as its editor
+ * Touch controller over the game (GameActivity) or alone as its editor
  * (EditorActivity). Modelled on NFSMW-Recompiled-Mobile's
  * TouchControllerView: layouts with factory positions as fractions of the
  * screen, overridden per control by what the editor saved; a HIDE/TOUCH
@@ -37,10 +37,10 @@ import java.util.Locale;
  *   FULL      the original Xbox controller: both sticks with L3/R3, D-pad,
  *             A B X Y, Black and White, LT and RT, Back and Start
  *   STEERING  for driving: steering (stick, arrows or tilting the phone)
- *             on the left, the RT and LT pedals and a big A (boost) on the
+ *             on the left, the RT and LT pedals and a big B (nitrous) on the
  *             right, the other buttons small
  *
- * State goes to native code (B3xActivity.nativeSetPad / nativeSetPadRight)
+ * State goes to native code (GameActivity.nativeSetPad / nativeSetPadRight)
  * as controller port 0, merged with a physical pad if one is plugged in.
  */
 public final class TouchControllerView extends View {
@@ -50,18 +50,18 @@ public final class TouchControllerView extends View {
     // analog button indices (bit n of the face mask)
     static final int A = 0, B = 1, X = 2, Y = 3, BLACK = 4, WHITE = 5;
 
-    private static final String PREFS = "b3x_touch";
+    private static final String PREFS = "nfsmw_touch";
     /** Bump when the factory layouts change. */
-    private static final int LAYOUT_VERSION = 2;
-    private static final boolean DEBUG = android.util.Log.isLoggable("b3x-pad", android.util.Log.DEBUG);
+    private static final int LAYOUT_VERSION = 3;
+    private static final boolean DEBUG = android.util.Log.isLoggable("nfsmw-pad", android.util.Log.DEBUG);
     private static final int MODES = 2;
     private static final String[] MODE_NAMES = {"FULL", "DRIVE"};
     private static final long TOGGLE_MS = 4000;
     private static final float STEP = .1f, SCALE_MIN = .5f, SCALE_MAX = 2.2f, OPA_MIN = .15f;
 
     private static final String HELP = "Drag to move · SIZE: selected or all";
-    private static final int ACCENT = Color.rgb(0xE5, 0x53, 0x4B);
-    private static final int PRESSED = Color.argb(200, 0xE5, 0x53, 0x4B);
+    private static final int ACCENT = Color.rgb(0x6F, 0x74, 0x32);
+    private static final int PRESSED = Color.argb(190, 0x6F, 0x74, 0x32);
     private static final int FILL = Color.argb(95, 10, 10, 12);
     private static final int EDGE = Color.argb(210, 255, 255, 255);
     private static final int UI_BG = Color.argb(190, 16, 17, 20);
@@ -151,7 +151,7 @@ public final class TouchControllerView extends View {
     private boolean toggleVisible = true;
     private final Runnable hideToggle = () -> { toggleVisible = false; invalidate(); };
     private final RectF toggleBtn = new RectF(), gearBtn = new RectF(), modeBtn = new RectF(), menuBtn = new RectF();
-    /** The in-game menu (hamburger): set by B3xActivity. */
+    /** The in-game menu (hamburger): set by GameActivity. */
     Runnable onMenu;
 
     // FPS counter (game only)
@@ -279,7 +279,7 @@ public final class TouchControllerView extends View {
         super.onDetachedFromWindow();
     }
 
-    /** B3xActivity: pause/resume the tilt sensor with the activity. */
+    /** GameActivity: pause/resume the tilt sensor with the activity. */
     void onPauseResume(boolean resumed) {
         if (resumed) updateTilt(); else stopTilt();
     }
@@ -308,14 +308,14 @@ public final class TouchControllerView extends View {
 
         Control dpad = add(new Control("dpad", "", null, K_DPAD, 0, -1, 0, 0, .95f, 0));
 
-        Control a = add(new Control("a", "A", null, K_ROUND, 0, A, 0, 0, .40f, 0));
-        Control b = add(new Control("b", "B", null, K_ROUND, 0, B, 0, 0, .40f, 0));
-        Control x = add(new Control("x", "X", null, K_ROUND, 0, X, 0, 0, .40f, 0));
-        Control y = add(new Control("y", "Y", null, K_ROUND, 0, Y, 0, 0, .40f, 0));
-        a.color = Color.rgb(0x3F, 0xB9, 0x50); b.color = Color.rgb(0xE5, 0x53, 0x4B);
+        Control a = add(new Control("a", "A", "E-BRAKE", K_ROUND, 0, A, 0, 0, .40f, 0));
+        Control b = add(new Control("b", "B", "NOS", K_ROUND, 0, B, 0, 0, .40f, 0));
+        Control x = add(new Control("x", "X", "SPEED", K_ROUND, 0, X, 0, 0, .40f, 0));
+        Control y = add(new Control("y", "Y", "LOOK", K_ROUND, 0, Y, 0, 0, .40f, 0));
+        a.color = Color.rgb(0x3F, 0xB9, 0x50); b.color = Color.rgb(0xE5, 0x53, 0x4B);   // Xbox B red, not the accent
         x.color = Color.rgb(0x44, 0x93, 0xF8); y.color = Color.rgb(0xE3, 0xB3, 0x41);
 
-        Control blk = add(new Control("black", "BLK", null, K_ROUND, 0, BLACK, 0, 0, .30f, 0));
+        Control blk = add(new Control("black", "BLK", "CAM", K_ROUND, 0, BLACK, 0, 0, .30f, 0));
         Control wht = add(new Control("white", "WHT", null, K_ROUND, 0, WHITE, 0, 0, .30f, 0));
         blk.color = Color.rgb(0x90, 0x90, 0x90);
 
@@ -350,7 +350,7 @@ public final class TouchControllerView extends View {
         // ---------------- STEERING: driving ----------------
         // Placed in units (min(w/16, h/9)) from the screen edges, so the
         // clusters stay tight on any aspect: left thumb = steering, D-pad and
-        // menu buttons; right thumb = pedals, boost and the face buttons
+        // menu buttons; right thumb = pedals, nitrous and the face buttons
         // as one diamond.
         float u = unit;
         // left
@@ -373,14 +373,15 @@ public final class TouchControllerView extends View {
         float gasX = width - 1.15f * u, brkX = gasX - 1.45f * u;
         place(gas, S, gasX, foot - 2.5f * u * .5f, 1f);
         place(brk, S, brkX, foot - 1.9f * u * .5f, 1f);
-        // face diamond right above the pedals, A (boost) at the bottom
-        Control boost = add(new Control("boost", "A", "BOOST", K_ROUND, 0, A, 0, 0, .46f, 0));
-        boost.color = a.color;
+        // face diamond right above the pedals, B (nitrous) big at the bottom,
+        // A (e-brake) on the right where the thumb rolls off the gas
+        Control boost = add(new Control("nos", "B", "NOS", K_ROUND, 0, B, 0, 0, .46f, 0));
+        boost.color = b.color;
         float dx = (gasX + brkX) * .5f, dy = foot - 2.5f * u - .5f * u - .46f * u;
         float step = .82f * u;
         place(boost, S, dx, dy, 1f);
         place(x, S, dx - step, dy - step, 1.05f);
-        place(b, S, dx + step, dy - step, 1.05f);
+        place(a, S, dx + step, dy - step, 1.05f);
         place(y, S, dx, dy - 2 * step, 1.05f);
         lt.visibleIn &= ~(1 << S);
         rt.visibleIn &= ~(1 << S);
@@ -779,12 +780,12 @@ public final class TouchControllerView extends View {
         }
         if (buttons != lastB || face != lastF || lt != lastLt || rt != lastRt || lx != lastLx || ly != lastLy) {
             lastB = buttons; lastF = face; lastLt = lt; lastRt = rt; lastLx = lx; lastLy = ly;
-            if (DEBUG) android.util.Log.d("b3x-pad", "b=" + buttons + " f=" + face + " lt=" + lt + " rt=" + rt + " lx=" + lx + " ly=" + ly);
-            try { B3xActivity.nativeSetPad(buttons, face, lt, rt, lx, ly); } catch (UnsatisfiedLinkError ignored) { }
+            if (DEBUG) android.util.Log.d("nfsmw-pad", "b=" + buttons + " f=" + face + " lt=" + lt + " rt=" + rt + " lx=" + lx + " ly=" + ly);
+            try { GameActivity.nativeSetPad(buttons, face, lt, rt, lx, ly); } catch (UnsatisfiedLinkError ignored) { }
         }
         if (rx != lastRx || ry != lastRy) {
             lastRx = rx; lastRy = ry;
-            try { B3xActivity.nativeSetPadRight(rx, ry); } catch (UnsatisfiedLinkError ignored) { }
+            try { GameActivity.nativeSetPadRight(rx, ry); } catch (UnsatisfiedLinkError ignored) { }
         }
     }
 
@@ -816,7 +817,7 @@ public final class TouchControllerView extends View {
         }
     }
 
-    /** B3xActivity: any key/motion from a physical pad hides the overlay. */
+    /** GameActivity: any key/motion from a physical pad hides the overlay. */
     void onPhysicalInput() {
         if (autoHide && !physicalPad) {
             physicalPad = true;

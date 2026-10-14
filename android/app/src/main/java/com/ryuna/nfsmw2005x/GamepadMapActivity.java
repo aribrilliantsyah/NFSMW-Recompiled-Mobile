@@ -1,4 +1,4 @@
-package com.ryuna.b3x;
+package com.ryuna.nfsmw2005x;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
@@ -19,7 +19,7 @@ import android.widget.TextView;
  * Physical controller mapping: each Xbox input (A..rthumb) takes one
  * controller button or trigger. Tap a row, then press the button on the pad.
  * Stored as SDL GameController names in Settings ("map_<xbox>"), written to
- * b3x_padmap.txt at Play and read by xinput_device.c (RECOMP_PAD_MAP).
+ * nfsmw_padmap.txt at Play and read by xinput_device.c (RECOMP_PAD_MAP).
  * Android key codes are turned into the SDL names here; SDL's own mapping
  * of the same pad is what the game reads, so both name the same buttons.
  */

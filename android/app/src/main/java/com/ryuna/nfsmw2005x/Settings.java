@@ -1,4 +1,4 @@
-package com.ryuna.b3x;
+package com.ryuna.nfsmw2005x;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -9,15 +9,15 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Every launcher setting, kept in SharedPreferences ("b3x"), and the files
+ * Every launcher setting, kept in SharedPreferences ("nfsmw"), and the files
  * native code reads at start in the app's external files directory (the
  * process's working directory):
  *
- *   b3x_launcher.txt  KEY=VALUE environment, loaded before b3x_env.txt
- *   b3x_options.txt   scale/fxaa/aniso (also written by the in-game rows)
- *   b3x_padmap.txt    the physical pad remap (RECOMP_PAD_MAP)
+ *   nfsmw_launcher.txt  KEY=VALUE environment, loaded before nfsmw_env.txt
+ *   nfsmw_options.txt   scale/fxaa/aniso (also written by the in-game rows)
+ *   nfsmw_padmap.txt    the physical pad remap (RECOMP_PAD_MAP)
  *
- * Touch layout positions live in their own preferences ("b3x_touch"),
+ * Touch layout positions live in their own preferences ("nfsmw_touch"),
  * written by the editor (TouchControllerView).
  */
 final class Settings {
@@ -79,7 +79,7 @@ final class Settings {
     private Settings() { }
 
     static SharedPreferences prefs(Context c) {
-        return c.getSharedPreferences("b3x", Context.MODE_PRIVATE);
+        return c.getSharedPreferences("nfsmw", Context.MODE_PRIVATE);
     }
 
     static File filesDir(Context c) {
@@ -113,26 +113,26 @@ final class Settings {
         File dir = filesDir(c);
 
         StringBuilder env = new StringBuilder();
-        env.append("# written by the launcher; b3x_env.txt overrides\n");
+        env.append("# written by the launcher; nfsmw_env.txt overrides\n");
         env.append("NFSU2_GAME_DIR=").append(gameDir(c)).append('\n');
         env.append("RECOMP_WIDESCREEN=").append(p.getBoolean(K_WIDESCREEN, false) ? 1 : 0).append('\n');
         if (p.getBoolean(K_STRETCH, false)) env.append("RECOMP_STRETCH=1\n");
         if (p.getBoolean(K_VK11, false)) env.append("RECOMP_VK_LEGACY=1\n");
         if (p.getBoolean(K_FRAME_LOCK, false)) env.append("B3_FRAME_LOCK=1\n");
         env.append("RECOMP_AUDIO_VOLUME=").append(p.getInt(K_VOLUME, 100)).append('\n');
-        env.append("RECOMP_PAD_MAP=").append(new File(dir, "b3x_padmap.txt").getAbsolutePath()).append('\n');
+        env.append("RECOMP_PAD_MAP=").append(new File(dir, "nfsmw_padmap.txt").getAbsolutePath()).append('\n');
         if (p.getBoolean(K_DEBUG_LOG, false)) {
-            // Android/data/com.ryuna.b3x/files/b3x_log.txt: a guest snapshot
+            // Android/data/com.ryuna.nfsmw2005x/files/nfsmw_log.txt: a guest snapshot
             // every 10 s and the FPS every second.
-            env.append("B3X_LOG_FILE=1\nRECOMP_WATCHDOG_SECS=10\nRECOMP_WATCHDOG_REPEAT=1\n");
+            env.append("NFSMW_LOG_FILE=1\nRECOMP_WATCHDOG_SECS=10\nRECOMP_WATCHDOG_REPEAT=1\n");
             env.append("RECOMP_FPS_LOG=2\n");
         }
-        write(new File(dir, "b3x_launcher.txt"), env.toString());
+        write(new File(dir, "nfsmw_launcher.txt"), env.toString());
 
         String opt = "scale=" + p.getInt(K_SCALE, 100) + "\n"
                    + "fxaa=" + (p.getBoolean(K_FXAA, false) ? 1 : 0) + "\n"
                    + "aniso=" + p.getInt(K_ANISO, 4) + "\n";
-        write(new File(dir, "b3x_options.txt"), opt);
+        write(new File(dir, "nfsmw_options.txt"), opt);
 
         StringBuilder map = new StringBuilder("# xbox=sdl, written by the launcher\n");
         for (int i = 0; i < XBOX_INPUTS.length; i++)
@@ -140,7 +140,7 @@ final class Settings {
         map.append("deadzone=").append(p.getInt(K_DEADZONE, 8)).append('\n');
         map.append("invert_ly=").append(p.getBoolean(K_INVERT_LY, false) ? 1 : 0).append('\n');
         map.append("invert_ry=").append(p.getBoolean(K_INVERT_RY, false) ? 1 : 0).append('\n');
-        write(new File(dir, "b3x_padmap.txt"), map.toString());
+        write(new File(dir, "nfsmw_padmap.txt"), map.toString());
     }
 
     private static void write(File f, String s) throws IOException {

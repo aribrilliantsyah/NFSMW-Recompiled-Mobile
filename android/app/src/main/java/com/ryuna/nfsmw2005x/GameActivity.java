@@ -1,4 +1,4 @@
-package com.ryuna.b3x;
+package com.ryuna.nfsmw2005x;
 
 import android.content.Context;
 import android.content.Intent;
@@ -29,12 +29,12 @@ import org.libsdl.app.SDLActivity;
  * (touch pad, its in-game editor, the FPS counter). Runs in its own
  * process (":game"), which ends with it.
  */
-public class B3xActivity extends SDLActivity {
+public class GameActivity extends SDLActivity {
     static native void nativeSetPad(int buttons, int face, int lt, int rt, int lx, int ly);
     static native void nativeSetPadRight(int rx, int ry);
     static native float nativeGetFps();
 
-    private static B3xActivity sSelf;
+    private static GameActivity sSelf;
     private static boolean sVibrate;
     private TouchControllerView mPad;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
@@ -116,7 +116,7 @@ public class B3xActivity extends SDLActivity {
         String[] items = { "Resume", "Edit touch layout", "Exit to launcher" };
         android.app.AlertDialog d = new android.app.AlertDialog.Builder(this,
                 android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("Burnout 3")
+            .setTitle("NFS Most Wanted")
             .setItems(items, (dlg, which) -> {
                 if (which == 1 && mPad != null) mPad.openEditor();
                 else if (which == 2) exitToLauncher();
@@ -178,7 +178,7 @@ public class B3xActivity extends SDLActivity {
     @SuppressWarnings("unused")
     static void rumble(int left, int right) {
         if (!sVibrate) return;
-        B3xActivity a = sSelf;
+        GameActivity a = sSelf;
         if (a != null) a.rumbleNow(left, right);
     }
 

@@ -1,4 +1,4 @@
-package com.ryuna.b3x;
+package com.ryuna.nfsmw2005x;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -25,8 +25,8 @@ final class XisoExtractor {
     static final byte[] MAGIC = "MICROSOFT*XBOX*MEDIA".getBytes(StandardCharsets.US_ASCII);
     /** Bare image, rebuilt images, redump with the video partition first. */
     static final long[] BASES = { 0x00000000L, 0x0000FD90L, 0x00030600L, 0x0FD90000L, 0x18300000L };
-    /** Burnout 3: Takedown, NTSC-U. */
-    static final int TITLE_ID = 0x4541005B;
+    /** Need for Speed: Most Wanted, NTSC-U. */
+    static final int TITLE_ID = 0x4541007B;
 
     static final class Entry {
         final String path;   // "Data/Globalus.bin"

@@ -1,4 +1,4 @@
-package com.ryuna.b3x;
+package com.ryuna.nfsmw2005x;
 
 import android.app.Activity;
 import android.content.pm.ActivityInfo;
