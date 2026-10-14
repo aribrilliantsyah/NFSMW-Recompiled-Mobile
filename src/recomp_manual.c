@@ -57,9 +57,277 @@ typedef void (*recomp_func_t)(void);
 extern ptrdiff_t g_xbox_mem_offset;
 
 /* ── NFSMW hooks ───────────────────────────────────────────
- * Need for Speed: Most Wanted (Xbox, title 0x4541007B, XDK 5849). Library
- * hooks are found by byte-matching Burnout 3's / Carbon's XDK 5849 bodies
- * (docs/research/nfsmw-re.md). Burnout 3's hooks: examples/burnout3/. */
+ *
+ * Need for Speed: Most Wanted (Xbox NTSC-U, title 0x4541007B, XDK 5849,
+ * NfsMWCollectorsRelease.exe = Black Edition). The libraries are the same
+ * builds as Carbon's (stock D3D8, DSOUND flags 0x400B) and Burnout 3's
+ * (DSOUND/CRT). Every address below was found in this XBE, not guessed:
+ * tools/xdk_match.py (masked byte match against Burnout 3's XBE) for the
+ * CRT and DSOUND bodies, tools/find_disp.py (the NV2A registers each D3D
+ * handler touches) plus disassembly for D3D. See docs/research/nfsmw-re.md.
+ *
+ *   hook                 Burnout 3    Carbon       NFSMW
+ *   memmove (x2)         0x2442A0     0x32C800     0x317170, 0x31A1C0
+ *   D3D BlockOnTime      0x351770*    0x35A0C0     0x374020  (stdcall, ret 8)
+ *   D3D device global    0x35FB48     0x368118     0x381DE8
+ *   D3D vblank (ecx)     0x356DA0*    0x362050     0x37C6F0
+ *   D3D PGRAPH (ecx)     0x357000     0x3625C0     0x37CC60
+ *   DSOUND DSP post      0x2F7EC2     0x39406B     0x3B9139
+ *   DSOUND EP watchdog   -            0x3947ED     0x3B98BB (from 0x3B9B9F)
+ *   AC97 reset           0x2FE736     0x399A64     0x3BF8CC  (table 0x3C0518)
+ *   DSOUND lock/unlock   0x2F3F70/92  0x391BB0/D2  0x3B65D0/0x3B65F2
+ *   AC97 re-arm          0x2FE540     0x39986E     0x3BF6D6
+ *   * = D3D8LTCG conventions (eax); NFSMW uses Carbon's (stdcall/thiscall).
+ */
+
+/* ── CRT memmove/memcpy (0x00317170, 0x0031A1C0) ─────────────
+ *
+ * Two copies of the MSVC CRT memmove, as in Carbon. Their tail and
+ * backward-copy paths dispatch through UnwindDown-style vectors indexed with
+ * a negative register, which the lifter cannot follow: every copy whose
+ * length was not a multiple of 4 silently lost its tail. Replaced by the host
+ * memmove. cdecl (dst, src, count), returns dst. */
+static void crt_memmove(void)
+{
+    uint32_t dst = MEM32(esp + 4);
+    uint32_t src = MEM32(esp + 8);
+    uint32_t n   = MEM32(esp + 12);
+
+    if (n)
+        memmove((void *)XBOX_PTR(dst), (const void *)XBOX_PTR(src), n);
+    eax = dst;
+    esp += 4;   /* return address; cdecl, the caller pops the arguments */
+}
+
+void sub_00317170(void) { crt_memmove(); }
+void sub_0031A1C0(void) { crt_memmove(); }
+
+/* ── D3D fence wait, D3D_BlockOnTime (0x00374020) ────────────
+ *
+ * stdcall (fence, flags), ret 8. Device through the global at 0x00381DE8:
+ *   +0x2C  write sequence, +0x30  pointer to the GPU semaphore
+ * and the wait sleeps on the event at device + 0x1DCC (0x0037416E:
+ * KeWaitForSingleObject until the PGRAPH handler takes the NOP(5) trap).
+ * With the pushbuffer executor the real semaphore and event are handed to
+ * it once and the original wait runs against them. */
+#define NFSMW_D3D_DEVICE_PTR  0x00381DE8u
+#define NFSMW_D3D_FENCE_EVENT 0x1DCCu
+extern void nv2a_pb_set_semaphore_target(uint32_t guest_va);
+extern void xbox_SetGpuFenceEvent(uint32_t guest_va);
+extern void sub_00374020_gen(void);
+
+void sub_00374020(void)
+{
+    static int exec = -1;
+    uint32_t dev = MEM32(NFSMW_D3D_DEVICE_PTR);
+    uint32_t sem = dev ? MEM32(dev + 0x30) : 0;
+
+    if (exec < 0)
+        exec = getenv("RECOMP_PB_EXEC") != NULL;
+    if (exec) {
+        static uint32_t registered;
+        if (sem && sem != registered) {
+            nv2a_pb_set_semaphore_target(sem);
+            xbox_SetGpuFenceEvent(dev + NFSMW_D3D_FENCE_EVENT);
+            fprintf(stderr, "[D3D] GPU semaphore at 0x%08X, fence event 0x%08X\n",
+                    sem, dev + NFSMW_D3D_FENCE_EVENT);
+            registered = sem;
+        }
+        sub_00374020_gen();
+        return;
+    }
+    if (sem)
+        MEM32(sem) = MEM32(dev + 0x2C);     /* "GPU" is always caught up */
+    eax = 0;
+    esp += 4 + 8;                           /* return address, 2 stdcall args */
+}
+
+/* ── D3D interrupt handlers at DISPATCH_LEVEL ────────────────
+ *
+ * The vblank handler (0x0037C6F0) and the PGRAPH handler (0x0037CC60) run
+ * both from D3D's DPC (kernel timer thread here) and from its busy-waits on
+ * the game thread. On the Xbox they never interleave; here they would, and a
+ * flip whose target vblank was passed in between stays pending forever
+ * (PersistDisplay hangs: NFSU2/Carbon's race-start hang). Both run at
+ * DISPATCH_LEVEL. Same code as Carbon's, see examples/ and nfsc-sw. */
+extern uint8_t xbox_KfRaiseIrql(uint8_t irql);
+extern void xbox_KfLowerIrql(uint8_t irql);
+extern uint8_t xbox_CurrentIrql(void);
+extern int xbox_gil_suspend(void);
+extern void xbox_gil_resume(int depth);
+extern void xbox_Nv2aVblankTaken(void);
+extern void nv2a_pb_flip_retired(unsigned n);
+
+static uint8_t d3d_isr_enter(void)
+{
+    uint8_t old = xbox_CurrentIrql();
+
+    if (old < 2) {
+        int d = xbox_gil_suspend();
+        old = xbox_KfRaiseIrql(2);
+        xbox_gil_resume(d);
+    }
+    return old;
+}
+
+static void d3d_isr_leave(uint8_t old)
+{
+    if (old < 2)
+        xbox_KfLowerIrql(old);
+}
+
+/* Vblank handler, thiscall (ecx = block; +0x1BC retire index, +0x1C0
+ * vblank count). */
+extern void sub_0037C6F0_gen(void);
+
+void sub_0037C6F0(void)
+{
+    uint32_t blk = ecx;
+    uint8_t old = d3d_isr_enter();
+    uint32_t head = MEM32(blk + 0x1BC);
+
+    xbox_Nv2aVblankTaken();
+    sub_0037C6F0_gen();
+    nv2a_pb_flip_retired(MEM32(blk + 0x1BC) - head);
+    d3d_isr_leave(old);
+}
+
+/* PGRAPH handler, thiscall. Takes the software-method traps (NOP(5) fence
+ * event, flips) under the executor's trap lock. The game asks for a
+ * 2-vblank presentation interval in races (30 fps); the flip NOP trap
+ * carries it as (bits << 5) | 1 and it is rewritten to 1 vblank here, as in
+ * Carbon/NFSU2 v0.5.9. NFSMW_FPS_CAP=30 keeps the title's interval. */
+extern void sub_0037CC60_gen(void);
+extern void nv2a_pb_trap_lock(void);
+extern void nv2a_pb_trap_unlock(void);
+extern void nv2a_pb_trap_taken(void);
+
+static int fps_cap_30(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("NFSMW_FPS_CAP");
+        v = e && atoi(e) == 30;
+        fprintf(stderr, "[fps] cap: %s\n", v ? "30 (title)" : "60 (NFSMW_FPS_CAP=30 for 30)");
+    }
+    return v;
+}
+
+void sub_0037CC60(void)
+{
+    volatile uint32_t *nv = (volatile uint32_t *)XBOX_PTR(0xFD000000u);
+    uint32_t blk = ecx;
+    uint8_t old = d3d_isr_enter();
+    uint32_t head = MEM32(blk + 0x1BC);
+    uint32_t nsource;
+
+    nv2a_pb_trap_lock();
+    nsource = nv[0x400108 / 4];
+    if (nsource && (nv[0x400704 / 4] & 0xFFFFu) == 0x0100u && !fps_cap_30()) {
+        uint32_t data = nv[0x400708 / 4];
+        if ((data & 0x1Fu) == 1u && ((data >> 5) & 7u) > 1u) {
+            static int told;
+            nv[0x400708 / 4] = (data & ~(7u << 5)) | (1u << 5);
+            if (!told++)
+                fprintf(stderr, "[fps] flip interval %u -> 1 vblank (uncapped)\n", (data >> 5) & 7u);
+        }
+    }
+    sub_0037CC60_gen();
+    nv2a_pb_flip_retired(MEM32(blk + 0x1BC) - head);
+    if (nsource)
+        nv2a_pb_trap_taken();
+    nv2a_pb_trap_unlock();
+    d3d_isr_leave(old);
+}
+
+/* ── DirectSound DSP command post (0x003B9139) ───────────────
+ * Spins until the GP DSP zeroes the command word at scratch + 0x810; there
+ * is no DSP, so the word is registered with the runtime's ack list. */
+extern int xbox_ApuDspAckWord(uint32_t va);
+extern void sub_003B9139_gen(void);
+
+void sub_003B9139(void)
+{
+    uint32_t obj = MEM32(ecx + 8);
+    uint32_t blk = obj ? MEM32(obj + 0x10) : 0;
+    uint32_t scratch = blk ? MEM32(blk) : 0;
+
+    if (scratch)
+        xbox_ApuDspAckWord(scratch + 0x810);
+    sub_003B9139_gen();
+}
+
+/* ── DirectSound EP watchdog reset (0x003B98BB) ──────────────
+ * sub_003B9AFB ends by checking the EP DSP heartbeat (*[0x003C0B70] =
+ * 0xFE85A018 must read 0xCCCCCC) and otherwise resets the APU. The APU
+ * model reads DSP memory as 0, so it would reset every frame (Carbon: the
+ * intro froze). Only the watchdog's call (return 0x003B9B9F) is skipped. */
+extern void sub_003B98BB_gen(void);
+
+void sub_003B98BB(void)
+{
+    if (MEM32(esp) == 0x003B9B9Fu) {
+        esp += 4;
+        return;
+    }
+    sub_003B98BB_gen();
+}
+
+/* ── DirectSound AC'97 channel reset (0x003BF8CC) ────────────
+ * Sets RR in the NABM control byte and spins on a hoisted copy of it
+ * (never re-read). Same function with the reset completing at once. */
+extern void sub_003B65D0(void);
+extern void sub_003B65F2(void);
+extern void sub_003BF6D6(void);
+
+void sub_003BF8CC(void)
+{
+    uint32_t ebp_saved = g_ebp, frame, chan, nabm;
+
+    PUSH32(esp, ebp_saved);
+    frame = esp;
+    g_ebp = frame;
+    g_seh_ebp = frame;
+    esp -= 8;
+    MEM32(frame - 4) = 0;
+    PUSH32(esp, esi);
+    esi = ecx;
+    chan = esi;
+
+    ecx = frame - 8;
+    PUSH32(esp, 0x003BF8E0u); RECOMP_ABI_CALL(0x003B65D0u, sub_003B65D0);
+
+    nabm = MEM32(MEM32(chan) * 4 + 0x003C0518u);
+    MEM8(nabm + 0xFEC0010Bu) = 2;
+    MEM8(nabm + 0xFEC0010Bu) &= (uint8_t)~2u;   /* reset complete */
+    eax = nabm;
+    SET_LO8(ecx, 0);
+
+    MEM32(nabm + 0xFEC00100u) = MEM32(chan + 0x1C);
+    if (MEM32(chan) == 1)
+        MEM32(0xFEC0017Cu) = MEM32(chan + 0x28);
+
+    PUSH32(esp, 1);
+    PUSH32(esp, 1);
+    ecx = chan;
+    PUSH32(esp, MEM8(chan + 0x24));
+    PUSH32(esp, MEM8(chan + 0x25));
+    eax = MEM8(chan + 0x25);
+    g_ebp = frame;
+    g_seh_ebp = frame;
+    PUSH32(esp, 0x003BF933u); RECOMP_ABI_CALL(0x003BF6D6u, sub_003BF6D6);
+
+    ecx = frame - 8;
+    g_ebp = frame;
+    g_seh_ebp = frame;
+    PUSH32(esp, 0x003BF93Bu); RECOMP_ABI_CALL(0x003B65F2u, sub_003B65F2);
+
+    POP32(esp, esi);
+    esp = frame;
+    POP32(esp, ebp_saved);
+    g_ebp = ebp_saved;
+    esp += 4;
+}
 
 /* Picture options (in-game rows not wired yet): no-op loader so main.c
  * links; the launcher's env file carries the renderer settings. */
