@@ -496,6 +496,35 @@ int usb_gamepad_connected(int dev)
         || xbox_InputGetState((DWORD)dev, &state) == 0;
 }
 
+/* RECOMP_PAD_DIAG=1: one line per report the title collects, rate-limited
+ * to changes plus a heartbeat every 5 s. Says whether the title still
+ * polls its pad and what it got: "pad does nothing" splits into "reports
+ * stopped" (driver/guest side) and "reports carry the press" (game side). */
+static void report_diag(int dev, const uint8_t *out)
+{
+    static int on = -1;
+    static uint8_t last[USB_GAMEPADS][2];
+    static unsigned long beat[USB_GAMEPADS], count[USB_GAMEPADS];
+    unsigned long now;
+
+    if (on < 0) {
+        const char *e = getenv("RECOMP_PAD_DIAG");
+        on = e && *e == '1';
+    }
+    if (!on)
+        return;
+    count[dev]++;
+    now = (unsigned long)GetTickCount();
+    if (out[2] != last[dev][0] || out[4] != last[dev][1] || now - beat[dev] >= 5000) {
+        fprintf(stderr, "  [PADDIAG] pad %d report #%lu t=%lu digital=%02X a=%02X b=%02X\n",
+                dev + 1, count[dev], now, out[2], out[4], out[5]);
+        fflush(stderr);
+        last[dev][0] = out[2];
+        last[dev][1] = out[4];
+        beat[dev] = now;
+    }
+}
+
 int usb_gamepad_report(int dev, uint8_t *out, int max)
 {
     XBOX_INPUT_STATE state;
@@ -548,6 +577,7 @@ int usb_gamepad_report(int dev, uint8_t *out, int max)
     if (xbox_InputGetState((DWORD)dev, &state) != 0) {
         out[2] = synth;
         pad_script(dev, out);
+        report_diag(dev, out);
         return 20;
     }
 
@@ -565,6 +595,7 @@ int usb_gamepad_report(int dev, uint8_t *out, int max)
     out[18] = (uint8_t)(g->sThumbRY & 0xFF);
     out[19] = (uint8_t)((g->sThumbRY >> 8) & 0xFF);
     pad_script(dev, out);
+    report_diag(dev, out);
     return 20;
 }
 

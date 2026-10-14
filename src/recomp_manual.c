@@ -329,6 +329,38 @@ void sub_003BF8CC(void)
     esp += 4;
 }
 
+/* ── XInputGetState (0x003C2094) diagnostic ──────────────────
+ * stdcall (handle, PXINPUT_STATE), ret 8. Copies the last report from the
+ * device object (+0x14) into the caller's state; returns 0 or 0x48F
+ * (DEVICE_NOT_CONNECTED). NFSMW_XINPUT_DIAG=1 logs each change of
+ * (result, buttons) and who asked, so "pad pressed, game does nothing"
+ * splits into "game never calls it" / "gets 0x48F" / "gets the press". */
+extern void sub_003C2094_gen(void);
+
+void sub_003C2094(void)
+{
+    static int on = -1;
+    uint32_t ret = MEM32(esp), h = MEM32(esp + 4), st = MEM32(esp + 8);
+
+    if (on < 0) {
+        const char *e = getenv("NFSMW_XINPUT_DIAG");
+        on = e && *e == '1';
+    }
+    sub_003C2094_gen();
+    if (on) {
+        static uint32_t last_rc = 0xFFFFFFFFu, last_b = 0xFFFFFFFFu, n;
+        uint32_t b = st ? (MEM16(st + 4) | ((uint32_t)MEM8(st + 6) << 16)) : 0;
+        n++;
+        if (eax != last_rc || b != last_b || (n % 600) == 0) {
+            fprintf(stderr, "[xinput] #%u from %08X h=%08X rc=%X pkt=%u buttons=%04X a=%02X\n",
+                    n, ret, h, eax, st ? MEM32(st) : 0, st ? MEM16(st + 4) : 0,
+                    st ? MEM8(st + 6) : 0);
+            last_rc = eax;
+            last_b = b;
+        }
+    }
+}
+
 /* ── Picture options (nfsmw_options.txt) ─────────────────────
  * Written by the launcher (Graphics card): scale=100/150/200/250, fxaa=0/1,
  * aniso=1..16. Loaded at boot into the Vulkan renderer. In-game rows (as
