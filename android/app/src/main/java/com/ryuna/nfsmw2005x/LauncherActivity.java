@@ -113,7 +113,7 @@ public class LauncherActivity extends Activity {
         mIsoBtn = ui.primary("INSTALL FROM ISO…", v -> pickIso());
         c.addView(mIsoBtn, new LinearLayout.LayoutParams(-1, -2));
         mPlayHint = ui.summary("Pick your NFS Most Wanted disc image (.iso, Xbox NTSC-U). It is extracted once "
-                + "into the app's folder (~2.4 GB); afterwards the .iso can be deleted. "
+                + "into the app's folder (~2.9 GB); afterwards the .iso can be deleted. "
                 + "Extracted it on a PC already? Choose that folder below.");
         mPlayHint.setPadding(0, ui.dp(4), 0, ui.dp(10));
         c.addView(mPlayHint);
@@ -384,7 +384,7 @@ public class LauncherActivity extends Activity {
         } catch (Exception e) {
             closeQuietly(pfd);
             alert("Not a usable disc image", e.getMessage()
-                    + "\n\nPick the .iso of the Xbox disc (an \"XISO\" image, ~2.4 GB).");
+                    + "\n\nPick the .iso of the Xbox disc (an \"XISO\" image, ~2.9 GB).");
             return;
         }
         if (x.find("default.xbe") == null || title != XisoExtractor.TITLE_ID) {
