@@ -65,5 +65,17 @@
  {
   "start": "0x003C7226",
   "note": "XPP class driver AddDevice (= Burnout 3 0x36746F, xdk_match); reached only through the class-driver table"
+ },
+ {
+  "start": "0x002BF64E",
+  "note": "Input event queue get-next (ecx = queue; [+0x10] cursor, [+0xC] end, link +0x24). Tail-jumped to from 0x2BF642's sibling; follows a ret with no padding, so disasm missed it and the lifter left an empty stub: the title queued pad events and never read them (START did nothing). Same bug class as Carbon's 0x2F5F15."
+ },
+ {
+  "start": "0x002E2940",
+  "note": "Follows a ret with no padding; tail-jump target left as an empty stub (push -1; push [0x4E43D8]; call 0x2B50E6)."
+ },
+ {
+  "start": "0x002E294E",
+  "note": "Follows a ret with no padding; tail-jump target left as an empty stub (push [0x4E43D8]; call 0x2B4F0C)."
  }
 ]
