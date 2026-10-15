@@ -36,3 +36,13 @@ from burnout3-sw; Burnout's findings mostly apply to the runtime here too).
 
 Linux Vulkan build and first run (ICALL/STUB triage, seeds), then the
 phones (the user tests on device).
+
+## START did nothing at the title (fixed 2026-10-15)
+
+The pad worked end to end: USB reports reached the game and XInputGetState
+(0x3C2094, `NFSMW_XINPUT_DIAG=1`) returned buttons 0x0010 with rc 0. The
+title never acted because sub_002BF64E, the input event queue's get-next,
+had been lifted as an empty stub (`recomp_stubs_unresolved.c`): nothing
+reached through a tail jump only. Seeding it (config/seed_functions.json)
+fixed START on Linux and on the phone. Check `recomp_stubs_unresolved.c`
+for stubs near any code path that "reads input but ignores it".
