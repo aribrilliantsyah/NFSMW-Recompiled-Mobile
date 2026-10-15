@@ -7,7 +7,9 @@
 set -u
 S="$1"; OUT="$2"; SECS="${3:-90}"
 mkdir -p "$OUT"
-A="2333 512"; RIGHT="330 486"; GAS="2322 876"
+# Factory Drive layout positions; right-side buttons follow the panel width.
+W=$(adb -s "$S" shell wm size </dev/null | grep -o '[0-9]*x[0-9]*' | tail -1 | awk -Fx '{print ($1>$2)?$1:$2}')
+A="$((W-127)) 512"; RIGHT="330 486"; GAS="$((W-138)) 876"
 tap() { adb -s "$S" shell "input swipe $1 $1 ${2:-300}" </dev/null; }
 hold() { adb -s "$S" shell "input swipe $1 $2 $1 $2 ${3:-300}" </dev/null; }
 pos() { set -- $1; echo "$1 $2"; }

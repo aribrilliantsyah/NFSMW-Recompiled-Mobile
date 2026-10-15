@@ -64,13 +64,17 @@ Infinix X6815D (Dimensity 920 class, Mali-G68 MC4, Vulkan 1.1), Android 13,
     <td><img src="docs/screenshots/android/launcher-iso.jpg" alt="First run"><br><sub>First run: INSTALL FROM ISO… or choose an extracted folder</sub></td>
     <td><img src="docs/screenshots/android/launcher.jpg" alt="Launcher"><br><sub>Installed: PLAY</sub></td>
   </tr>
+  <tr>
+    <td><img src="docs/screenshots/android/poco-race.jpg" alt="Race on Adreno 610"><br><sub>POCO M3 (Adreno 610): Quick Play race, day, highway</sub></td>
+    <td><img src="docs/screenshots/android/poco-menu.jpg" alt="Main menu on Adreno 610"><br><sub>POCO M3 (Adreno 610): main menu, 39 fps</sub></td>
+  </tr>
 </table>
 
 ## 🚦 Status
 
 Playable on a phone: intro, title, profile creation and save, main menu,
 Quick Race with AI opponents, driving with the touch pedals. Tested on the
-Mali-G68 (Vulkan 1.1 path); the Adreno 610 is not tested yet. The shell
+Mali-G68 and the Adreno 610 (both on the Vulkan 1.1 path). The shell
 (launcher, ISO install, touch pad and editor, controller mapping, FPS
 overlay) and the Vulkan renderer come from the Burnout 3 port. The game
 side is new; how its hooks were found is in
@@ -164,28 +168,34 @@ layout.
 | Device | SoC / GPU | Driver | Result |
 |---|---|---|---|
 | Infinix X6815D (Android 13) | Dimensity 920 class, Mali-G68 MC4 | Mali r32p1, Vulkan 1.1 | ✅ title → menu → race, touch input, saves |
-| POCO M3 (Android 15) | Snapdragon 662, Adreno 610 | Adreno 512.658, Vulkan 1.1 | ⏳ to test (Burnout 3: ✅) |
+| POCO M3 (Android 15) | Snapdragon 662, Adreno 610 | Adreno 512.658, Vulkan 1.1 | ✅ title → menu → race, touch input, saves (rendering same as Mali) |
 | Linux desktop (dev host) | any Vulkan GPU | RADV, lavapipe | ✅ to the profile prompt (headless) |
 
 Requirements: Android 11 (API 30) or newer, arm64-v8a, Vulkan 1.1.
 
 ## ⏱️ Benchmark
 
-Infinix X6815D, Mali-G68 MC4, internal resolution 1x (640x480), FXAA off,
-anisotropic off, 30 fps cap off. FPS is the in-game counter (`RECOMP_FPS_LOG`,
-one sample every 0.5 s), logged by
-[`scripts/android/race-bench.sh`](scripts/android/race-bench.sh): Quick Play
-race, GAS held for 90 s.
+Internal resolution 1x (640x480), FXAA off, anisotropic off, 30 fps cap
+off. FPS is the in-game counter (`RECOMP_FPS_LOG`, one sample every 0.5 s),
+logged by [`scripts/android/race-bench.sh`](scripts/android/race-bench.sh):
+Quick Play race (random track and opponents), GAS held for 90 s.
 
-| Scene | Samples | Average | Median | p10 (worst 10%) | Min | Max |
-|---|---|---|---|---|---|---|
-| Intro, title, menus | (spot) | 60 | 60 | | 52 | 60 |
-| Race (Quick Play, 4 cars, night) | 176 | **43.2** | 43.9 | 33.4 | 17.4 | 58.2 |
+| Device | Scene | Samples | Average | Median | p10 (worst 10%) | Min | Max |
+|---|---|---|---|---|---|---|---|
+| Infinix X6815D, Mali-G68 MC4 | Intro, title, menus | (spot) | 60 | 60 | | 52 | 60 |
+| Infinix X6815D, Mali-G68 MC4 | Race (4 cars, night) | 176 | **43.2** | 43.9 | 33.4 | 17.4 | 58.2 |
+| POCO M3, Adreno 610 | Intro, title | (spot) | 60 | 60 | | | 60 |
+| POCO M3, Adreno 610 | Main menu (3D garage) | (spot) | 40 | 40 | | 38.7 | 40.6 |
+| POCO M3, Adreno 610 | Race (2 cars, day, highway) | 178 | **22.8** | 23.7 | 16.7 | 12.9 | 35.0 |
 
-The single 17 fps sample has not been looked into. One earlier race run
-(before the 16 MB logcat buffer) had the race timer stop at 1:21 while
-frames kept coming; the next two runs got past 2:57 with the timer running,
-so it has not been reproduced.
+Quick Play picks a different race each time, so the two race rows are not
+the same scene. On the Adreno the race timer advanced 31.65 s between two
+screenshots 30 s apart, so a low frame rate does not slow the race down.
+
+The single 17 fps sample on the Mali has not been looked into. One earlier
+race run there (before the 16 MB logcat buffer) had the race timer stop at
+1:21 while frames kept coming; the next two runs got past 2:57 with the
+timer running, so it has not been reproduced.
 
 ## 🧩 How it works
 
