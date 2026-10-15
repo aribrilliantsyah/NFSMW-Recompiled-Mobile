@@ -38,15 +38,43 @@ Android shell and renderer.
 > the recompiled engine. You need your own copy of the Xbox disc (NTSC-U,
 > title ID `0x4541007B`).
 
+## 📸 Screenshots
+
+Infinix X6815D (Dimensity 920 class, Mali-G68 MC4, Vulkan 1.1), Android 13,
+2460x1080, internal resolution 1x, Show FPS on.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/android/race.jpg" alt="Race"><br><sub>Quick Play lap knockout, 50 fps, GAS held on the touch pedal (Drive layout)</sub></td>
+    <td width="50%"><img src="docs/screenshots/android/race-tunnel.jpg" alt="Race, tunnel"><br><sub>Same race, tunnel section, 88 mph</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/android/title.jpg" alt="Title"><br><sub>Title screen, 60 fps</sub></td>
+    <td><img src="docs/screenshots/android/menu.jpg" alt="Main menu"><br><sub>Main menu with the 3D garage, 60 fps</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/android/race-brief.jpg" alt="Quick Play brief"><br><sub>Quick Play brief: track and car</sub></td>
+    <td><img src="docs/screenshots/android/alias.jpg" alt="Profile prompt"><br><sub>Profile (alias) creation, saved to UDATA</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/android/layout-full.jpg" alt="Full layout"><br><sub>Full layout: the whole original Xbox pad</sub></td>
+    <td><img src="docs/screenshots/android/menu-pause.jpg" alt="In-game menu"><br><sub>☰ in-game menu: resume, edit layout, exit</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/android/launcher-iso.jpg" alt="First run"><br><sub>First run: INSTALL FROM ISO… or choose an extracted folder</sub></td>
+    <td><img src="docs/screenshots/android/launcher.jpg" alt="Launcher"><br><sub>Installed: PLAY</sub></td>
+  </tr>
+</table>
+
 ## 🚦 Status
 
-Bring-up. The shell (launcher, ISO install, touch pad and editor, controller
-mapping, FPS overlay) and the Vulkan renderer with its Mali/Adreno fixes are
-the Burnout 3 port's, which runs on a Mali-G68 and an Adreno 610. The game
-side is new: the XDK hooks are in and it boots on Linux (Vulkan up, game
-data streaming, flips at 60 fps pacing); see
-[docs/research/nfsmw-re.md](docs/research/nfsmw-re.md). Phones are next.
-Screenshots come once it runs on a phone.
+Playable on a phone: intro, title, profile creation and save, main menu,
+Quick Race with AI opponents, driving with the touch pedals. Tested on the
+Mali-G68 (Vulkan 1.1 path); the Adreno 610 is not tested yet. The shell
+(launcher, ISO install, touch pad and editor, controller mapping, FPS
+overlay) and the Vulkan renderer come from the Burnout 3 port. The game
+side is new; how its hooks were found is in
+[docs/research/nfsmw-re.md](docs/research/nfsmw-re.md).
 
 ## 🚀 Quick start
 
@@ -135,11 +163,29 @@ layout.
 
 | Device | SoC / GPU | Driver | Result |
 |---|---|---|---|
-| Infinix X6815D (Android 13) | Dimensity 920 class, Mali-G68 MC4 | Mali r32p1, Vulkan 1.1 | ⏳ to test (Burnout 3: ✅) |
+| Infinix X6815D (Android 13) | Dimensity 920 class, Mali-G68 MC4 | Mali r32p1, Vulkan 1.1 | ✅ title → menu → race, touch input, saves |
 | POCO M3 (Android 15) | Snapdragon 662, Adreno 610 | Adreno 512.658, Vulkan 1.1 | ⏳ to test (Burnout 3: ✅) |
-| Linux desktop (dev host) | any Vulkan GPU | RADV, lavapipe | ⏳ |
+| Linux desktop (dev host) | any Vulkan GPU | RADV, lavapipe | ✅ to the profile prompt (headless) |
 
 Requirements: Android 11 (API 30) or newer, arm64-v8a, Vulkan 1.1.
+
+## ⏱️ Benchmark
+
+Infinix X6815D, Mali-G68 MC4, internal resolution 1x (640x480), FXAA off,
+anisotropic off, 30 fps cap off. FPS is the in-game counter (`RECOMP_FPS_LOG`,
+one sample every 0.5 s), logged by
+[`scripts/android/race-bench.sh`](scripts/android/race-bench.sh): Quick Play
+race, GAS held for 90 s.
+
+| Scene | Samples | Average | Median | p10 (worst 10%) | Min | Max |
+|---|---|---|---|---|---|---|
+| Intro, title, menus | (spot) | 60 | 60 | | 52 | 60 |
+| Race (Quick Play, 4 cars, night) | 176 | **43.2** | 43.9 | 33.4 | 17.4 | 58.2 |
+
+The single 17 fps sample has not been looked into. One earlier race run
+(before the 16 MB logcat buffer) had the race timer stop at 1:21 while
+frames kept coming; the next two runs got past 2:57 with the timer running,
+so it has not been reproduced.
 
 ## 🧩 How it works
 
