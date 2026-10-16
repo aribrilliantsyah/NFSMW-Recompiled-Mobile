@@ -135,8 +135,9 @@ flowchart TD
   original).
 - **Two touch layouts**, the same mechanics as the Burnout 3 port:
   - *Drive*: steering stick (or ◀ ▶ arrows, or tilt), GAS and BRAKE
-    pedals, a big NOS button over the pedals with E-BRAKE, Speedbreaker and
-    look-back around it, D-pad (shop, Blacklist, map, SMS), camera.
+    pedals, the face buttons in the Xbox order above them (A = E-BRAKE at
+    the bottom, a big B = NOS on the right, X = Speedbreaker, Y =
+    look-back), D-pad (shop, Blacklist, map, SMS), camera.
   - *Full*: the complete original Xbox controller.
 - **Layout editor**, **controller mapping**, **in-game ☰ menu**, **Show
   FPS**, **install from ISO**, **debug log**: as in the Burnout 3 port.
@@ -280,6 +281,12 @@ in `nfsmw_env.txt` in `Android/data/com.ryuna.nfsmw2005x/files/`, one
 | Variable | Meaning |
 |---|---|
 | `NFSMW_FPS_CAP=30` | Keep the title's 30 fps flip interval in races. |
+| `NFSMW_FRAME_LAG=0` | Wait for each frame's own GPU fence (the title's way) instead of the previous frame's. |
+| `NFSMW_PERF_HINT=0` | No Android performance hint session (ADPF, Android 13+). |
+| `RECOMP_BIG_CORES=0` | Let the guest and pushbuffer threads float instead of keeping them on the fastest CPU cluster. |
+| `RECOMP_VK_BARRIER=all` | Full pipeline barrier between render passes (the old behaviour). |
+| `RECOMP_QUIET=0` | Periodic kernel/GPU summaries and per-read lines in the log (off by default on Android). |
+| `RECOMP_NV2A_TRACE=1` | Log every pushbuffer kickoff (`DMA_PUT`) and scanout change. |
 | `NFSMW_LOG_FILE=1` | Write `nfsmw_log.txt` (the launcher's Debug log). |
 
 ## 📂 Project layout
