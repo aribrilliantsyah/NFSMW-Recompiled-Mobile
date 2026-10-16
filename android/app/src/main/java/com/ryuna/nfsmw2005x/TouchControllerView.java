@@ -37,7 +37,8 @@ import java.util.Locale;
  *   FULL      the original Xbox controller: both sticks with L3/R3, D-pad,
  *             A B X Y, Black and White, LT and RT, Back and Start
  *   STEERING  for driving: steering (stick, arrows or tilting the phone)
- *             on the left, the RT and LT pedals and a big B (nitrous) on the
+ *             on the left, the RT and LT pedals and the face diamond in the
+ *             Xbox order (A bottom, B right) with B (nitrous) big on the
  *             right, the other buttons small
  *
  * State goes to native code (GameActivity.nativeSetPad / nativeSetPadRight)
@@ -52,7 +53,7 @@ public final class TouchControllerView extends View {
 
     private static final String PREFS = "nfsmw_touch";
     /** Bump when the factory layouts change. */
-    private static final int LAYOUT_VERSION = 3;
+    private static final int LAYOUT_VERSION = 4;
     private static final boolean DEBUG = android.util.Log.isLoggable("nfsmw-pad", android.util.Log.DEBUG);
     private static final int MODES = 2;
     private static final String[] MODE_NAMES = {"FULL", "DRIVE"};
@@ -373,15 +374,17 @@ public final class TouchControllerView extends View {
         float gasX = width - 1.15f * u, brkX = gasX - 1.45f * u;
         place(gas, S, gasX, foot - 2.5f * u * .5f, 1f);
         place(brk, S, brkX, foot - 1.9f * u * .5f, 1f);
-        // face diamond right above the pedals, B (nitrous) big at the bottom,
-        // A (e-brake) on the right where the thumb rolls off the gas
+        // face diamond right above the pedals, in the Xbox controller's own
+        // order (A bottom, B right, X left, Y top) so the thumb finds each
+        // where the pad has it; B (nitrous) is the big one, A (e-brake)
+        // under it where the thumb rolls off the gas
         Control boost = add(new Control("nos", "B", "NOS", K_ROUND, 0, B, 0, 0, .46f, 0));
         boost.color = b.color;
-        float dx = (gasX + brkX) * .5f, dy = foot - 2.5f * u - .5f * u - .46f * u;
         float step = .82f * u;
-        place(boost, S, dx, dy, 1f);
+        float dx = (gasX + brkX) * .5f, dy = foot - 2.5f * u - .5f * u - .40f * 1.05f * u;
+        place(a, S, dx, dy, 1.05f);
+        place(boost, S, dx + step + .06f * u, dy - step, 1f);
         place(x, S, dx - step, dy - step, 1.05f);
-        place(a, S, dx + step, dy - step, 1.05f);
         place(y, S, dx, dy - 2 * step, 1.05f);
         lt.visibleIn &= ~(1 << S);
         rt.visibleIn &= ~(1 << S);
