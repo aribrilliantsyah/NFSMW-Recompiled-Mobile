@@ -92,6 +92,106 @@ Java_com_ryuna_nfsmw2005x_GameActivity_nativeGetFps(JNIEnv *env, jclass cls)
 }
 
 /* ------------------------------------------------------------------ */
+/* CPU clocks: Android's performance hint (ADPF)                        */
+/*
+ * The Mali race log showed the frame rate stepping 55 -> 35 -> 55 with no
+ * shader compiles or uploads behind it: schedutil only raises a core's
+ * clock after it has seen it busy, so every heavier stretch of track first
+ * ran at the lower clock for a few frames. A performance hint session
+ * tells the governor, per frame, how long the work took against a 16.7 ms
+ * target, and it sets the clocks (and the big cores) ahead of time.
+ *
+ * APerformanceHint is API 33 (the Infinix runs 13); the app's minSdk is
+ * 30, so it is looked up with dlsym and skipped where it is missing. The
+ * session covers the game's guest thread and the pushbuffer executor
+ * (registered by xbox_perf_hint_thread). NFSMW_PERF_HINT=0 turns it off.
+ */
+#include <dlfcn.h>
+#include <sys/syscall.h>
+
+typedef struct APerformanceHintManager APerformanceHintManager;
+typedef struct APerformanceHintSession APerformanceHintSession;
+static APerformanceHintManager *(*p_hint_get_manager)(void);
+static APerformanceHintSession *(*p_hint_create)(APerformanceHintManager *, const int32_t *,
+                                                 size_t, int64_t);
+static int (*p_hint_report)(APerformanceHintSession *, int64_t);
+static int (*p_hint_set_threads)(APerformanceHintSession *, const pid_t *, size_t);  /* API 34 */
+
+static pthread_mutex_t s_hint_lock = PTHREAD_MUTEX_INITIALIZER;
+static APerformanceHintSession *s_hint;
+static int32_t s_hint_tids[4];
+static size_t s_hint_ntids;
+static int s_hint_state = -1;            /* -1 untried, 0 off, 1 on */
+#define HINT_TARGET_NS 16666667LL
+
+static int hint_init(void)
+{
+    const char *e = getenv("NFSMW_PERF_HINT");
+    void *lib;
+    if (s_hint_state >= 0)
+        return s_hint_state;
+    s_hint_state = 0;
+    if (e && *e == '0')
+        return 0;
+    lib = dlopen("libandroid.so", RTLD_NOW);
+    if (!lib)
+        return 0;
+    p_hint_get_manager = dlsym(lib, "APerformanceHint_getManager");
+    p_hint_create = dlsym(lib, "APerformanceHint_createSession");
+    p_hint_report = dlsym(lib, "APerformanceHint_reportActualWorkDuration");
+    p_hint_set_threads = dlsym(lib, "APerformanceHint_setThreads");
+    if (!p_hint_get_manager || !p_hint_create || !p_hint_report) {
+        printf("[perf] no performance hint API (Android 13+); clocks left to the governor\n");
+        return 0;
+    }
+    s_hint_state = 1;
+    return 1;
+}
+
+/* A thread whose busy time sets the frame rate joins the session. */
+void xbox_perf_hint_thread(void)
+{
+    APerformanceHintManager *m;
+    int32_t tid = (int32_t)syscall(SYS_gettid);
+    pthread_mutex_lock(&s_hint_lock);
+    if (!hint_init() || s_hint_ntids == sizeof s_hint_tids / sizeof s_hint_tids[0]) {
+        pthread_mutex_unlock(&s_hint_lock);
+        return;
+    }
+    s_hint_tids[s_hint_ntids++] = tid;
+    if (s_hint && p_hint_set_threads) {
+        if (p_hint_set_threads(s_hint, (const pid_t *)s_hint_tids, s_hint_ntids) == 0)
+            printf("[perf] performance hint: %zu threads\n", s_hint_ntids);
+    } else if (!s_hint && (m = p_hint_get_manager()) != NULL) {
+        s_hint = p_hint_create(m, s_hint_tids, s_hint_ntids, HINT_TARGET_NS);
+        printf("[perf] performance hint session %s (target 16.7 ms)\n",
+               s_hint ? "on" : "refused by the system");
+    }
+    pthread_mutex_unlock(&s_hint_lock);
+}
+
+/* Once a frame, from the renderer's flip: wall time since the last flip,
+ * capped so a loading screen does not read as a 2-second frame. */
+void xbox_perf_hint_frame(void)
+{
+    static struct timespec last;
+    struct timespec now;
+    int64_t ns;
+    if (s_hint_state <= 0 || !s_hint)
+        return;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (last.tv_sec) {
+        ns = (int64_t)(now.tv_sec - last.tv_sec) * 1000000000LL + (now.tv_nsec - last.tv_nsec);
+        if (ns > 0) {
+            if (ns > 4 * HINT_TARGET_NS)
+                ns = 4 * HINT_TARGET_NS;
+            p_hint_report(s_hint, ns);
+        }
+    }
+    last = now;
+}
+
+/* ------------------------------------------------------------------ */
 /* stdout/stderr -> logcat                                            */
 
 static int s_log_pipe[2];

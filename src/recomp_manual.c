@@ -133,6 +133,35 @@ void sub_00374020(void)
                     sem, dev + NFSMW_D3D_FENCE_EVENT);
             registered = sem;
         }
+        if (MEM32(esp) == 0x0037460Cu && MEM32(esp + 12) == 0x000D8B55u) {
+            /* The frame function sub_000D8720 ends each frame with
+             * KickOff (0x374610), InsertFence (0x374790), BlockOnFence
+             * (0x374600, called from 0x0D8B4F) on that very fence, then Swap
+             * (0x3768B0): the game thread sits idle until the pushbuffer
+             * executor has drawn the whole frame, and the executor idles
+             * while the game builds the next one. Carbon's renderer does
+             * the same (sub_0010B240), and waiting for the previous frame's
+             * fence there took Eden races from 9-18 to 21-24 fps. Here too:
+             * two frames in flight, game and executor on their own cores.
+             * NFSMW_FRAME_LAG=0 (or RECOMP_FRAME_LAG=0) waits for this
+             * frame's fence as the title does. */
+            static int lag = -1;
+            static uint32_t prev;
+            if (lag < 0) {
+                const char *e = getenv("NFSMW_FRAME_LAG");
+                if (!e) e = getenv("RECOMP_FRAME_LAG");
+                lag = !(e && *e == '0');
+                fprintf(stderr, "[D3D] frame fence: %s\n",
+                        lag ? "previous frame (NFSMW_FRAME_LAG=0 for this frame)" : "this frame");
+            }
+            if (lag) {
+                uint32_t mine = MEM32(esp + 4);
+                /* Fences only grow; a smaller one is a reset device. */
+                if (prev && prev < mine)
+                    MEM32(esp + 4) = prev;
+                prev = mine;
+            }
+        }
         sub_00374020_gen();
         return;
     }

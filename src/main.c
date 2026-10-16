@@ -256,6 +256,10 @@ int main(int argc, char **argv)
 int game_main(void)
 {
     xbox_guest_pin(0);     /* the boot thread becomes the title's first thread */
+    {
+        extern void xbox_perf_hint_thread(void);   /* Android ADPF, else a no-op */
+        xbox_perf_hint_thread();                    /* it runs the frame loop */
+    }
     char xbe_path[512];
     const char *game_dir;
     void *xbe_data;
@@ -289,9 +293,12 @@ int game_main(void)
      * world positions in fixed-function mode. */
     setenv("RECOMP_INLINE_FFP", "1", 0);
 #endif
-#if defined(__SWITCH__)
+#if defined(__SWITCH__) || defined(__ANDROID__)
     /* Every periodic log line flushes to the SD card; keep the log to what
-     * matters on a console. RECOMP_QUIET=0 in nfsmw_env.txt brings it back. */
+     * matters on a console. RECOMP_QUIET=0 in nfsmw_env.txt brings it back.
+     * Android: the same lines go through the logcat pipe, and the threads
+     * that write them (the executor's [GPU] reports, every [READ], the
+     * [KERNEL] summaries) stall whenever the log thread falls behind. */
     setenv("RECOMP_QUIET", "1", 0);
 #endif
 

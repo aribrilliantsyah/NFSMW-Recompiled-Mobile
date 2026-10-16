@@ -590,6 +590,54 @@ static void barrier_all(void)
         s_surf[i].dirty = 0;
 }
 
+/* Between two rendering passes. Images are written only as attachments and
+ * by transfers (uploads, blits, clears), and read only by fragment shaders
+ * and transfers -- no vertex program samples a texture (gl_vsh.c), and the
+ * vertex/index/uniform ring is written by the host, which submission makes
+ * visible. So the next pass's vertex work need not wait for anything: on a
+ * tiler (Mali, Adreno) ALL_COMMANDS -> ALL_COMMANDS kept each pass's binning
+ * behind the previous pass's last fragment, a bubble at every one of the
+ * ~16 render-target changes of a race frame. RECOMP_VK_BARRIER=all keeps
+ * the full barrier. */
+static void barrier_pass(void)
+{
+    static int full = -1;
+    VkMemoryBarrier mb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+    int i;
+    if (full < 0) {
+        const char *e = getenv("RECOMP_VK_BARRIER");
+        full = e && !strcmp(e, "all");
+    }
+    if (full) {
+        barrier_all();
+        return;
+    }
+    mb.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                     | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+                     | VK_ACCESS_TRANSFER_WRITE_BIT;
+    mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT
+                     | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                     | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT
+                     | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+                     | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(s_cb,
+                         /* FRAGMENT_SHADER in src: a pass that sampled an
+                          * image finishes before the next one writes it */
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+                         | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
+                         | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
+                         | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+                         | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+                         | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
+                         | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
+                         | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+                         | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 1, &mb, 0, NULL, 0, NULL);
+    for (i = 0; i < VK_MAX_SURF; i++)
+        s_surf[i].dirty = 0;
+}
+
 static void end_rendering(void)
 {
     if (s_in_render) {
@@ -646,7 +694,7 @@ static void begin_rendering(VkSurf *s, VkDepthBuf *d)
     if (s_in_render && s_rt == s && s_rt_depth == d)
         return;
     end_rendering();
-    barrier_all();
+    barrier_pass();
     s_st_passes++;
     ca.imageView = s->view;
     ca.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -4596,6 +4644,10 @@ static void vk_flip(void)
         return;
     pend_flush();
     s_frame++;
+    {
+        extern void xbox_perf_hint_frame(void);   /* Android ADPF, else a no-op */
+        xbox_perf_hint_frame();
+    }
     {
         /* Frames a second over the last half second, for an overlay. */
         static struct timespec t0;

@@ -868,12 +868,102 @@ int xbox_guest_core(void)
     return core;
 }
 
+/* ── The fast cores ────────────────────────────────────────────
+ *
+ * Phones are big.LITTLE: the Dimensity 920 has two Cortex-A78 at 2.5 GHz
+ * (cpu6-7) next to six A55 at 2.0 GHz, the Snapdragon 662 four A73 next to
+ * four A55. The two threads that set the frame rate -- the guest thread
+ * running lifted code and the pushbuffer executor recording Vulkan -- are
+ * each about one core busy, and the scheduler moved them onto an A55 now
+ * and then (half the speed): the race fps went 55 -> 35 -> 55 with nothing
+ * changing on screen. Both are kept on the fastest cluster: every core whose
+ * cpuinfo_max_freq is the highest, and the next tier too when that is a
+ * single prime core (it would leave the two threads one core). Android by
+ * default; RECOMP_BIG_CORES=0 turns it off, =1 turns it on elsewhere. */
+#if !defined(__SWITCH__) && !defined(__APPLE__)
+static int fast_cores_mask(cpu_set_t *set)
+{
+    static int state = -1;            /* -1 untried, 0 none, 1 have */
+    static cpu_set_t mask;
+    if (state < 0) {
+        const char *e = getenv("RECOMP_BIG_CORES");
+        long n = sysconf(_SC_NPROCESSORS_CONF), i;
+        long freq[64], top = 0, second = 0;
+        int count_top = 0, count = 0;
+#if defined(__ANDROID__)
+        int on = !(e && *e == '0');
+#else
+        int on = e && *e == '1';
+#endif
+        state = 0;
+        CPU_ZERO(&mask);
+        if (!on || n < 2)
+            return 0;
+        if (n > 64) n = 64;
+        for (i = 0; i < n; i++) {
+            char path[96];
+            FILE *f;
+            freq[i] = 0;
+            snprintf(path, sizeof path,
+                     "/sys/devices/system/cpu/cpu%ld/cpufreq/cpuinfo_max_freq", i);
+            if ((f = fopen(path, "r")) != NULL) {
+                if (fscanf(f, "%ld", &freq[i]) != 1)
+                    freq[i] = 0;
+                fclose(f);
+            }
+            if (freq[i] > top) top = freq[i];
+        }
+        for (i = 0; i < n; i++) {
+            if (freq[i] == top) count_top++;
+            else if (freq[i] > second) second = freq[i];
+        }
+        if (!top || count_top == n)
+            return 0;                 /* unknown, or all alike: nothing to pick */
+        for (i = 0; i < n; i++)
+            if (freq[i] == top || (count_top < 2 && freq[i] == second)) {
+                CPU_SET((int)i, &mask);
+                count++;
+            }
+        if (count < 2 || count == n)
+            return 0;
+        state = 1;
+        fprintf(stderr, "  [THREAD] guest and executor on the %d fastest cores (max %ld MHz)%s\n",
+                count, top / 1000, count_top < 2 ? " incl. the next tier" : "");
+    }
+    if (state > 0)
+        *set = mask;
+    return state > 0;
+}
+#endif
+
+void xbox_fast_cores_pin(void)
+{
+#if !defined(__SWITCH__) && !defined(__APPLE__)
+    cpu_set_t set;
+    if (!fast_cores_mask(&set))
+        return;
+#if defined(__ANDROID__)
+    sched_setaffinity(0, sizeof set, &set);       /* bionic: calling thread */
+#else
+    pthread_setaffinity_np(pthread_self(), sizeof set, &set);
+#endif
+#endif
+}
+
+/* The port's performance hint hooks (Android: src/android_main.c, ADPF).
+ * A frame-rate thread joins with xbox_perf_hint_thread, the renderer reports
+ * every flip with xbox_perf_hint_frame. Nothing elsewhere. */
+__attribute__((weak)) void xbox_perf_hint_thread(void) { }
+__attribute__((weak)) void xbox_perf_hint_frame(void) { }
+
 void xbox_guest_pin(int interrupt)
 {
     int core = xbox_guest_core();
     const char *e = getenv("RECOMP_GUEST_ONE_CORE");
-    if (core < 0)
+    if (core < 0) {
+        xbox_fast_cores_pin();     /* Android: the big cluster (no-op elsewhere) */
         return;
+    }
     if (interrupt && e && *e == '2')
         return;                /* mode 2: guest threads only, interrupts float */
 #if defined(__SWITCH__)

@@ -936,6 +936,14 @@ static void fence_mirrors_tick(void)
 }
 
 static int s_nv2a_trace = 0;
+/* The per-kickoff DMA_PUT / PCRTC_START lines and the framebuffer checksum:
+ * only when RECOMP_NV2A_TRACE asks for them. s_nv2a_trace is also set by
+ * RECOMP_PB_EXEC, which every title that draws runs with, so they used to be
+ * on everywhere the log was not quiet: ~800 lines a second from the
+ * executor's own thread. On Android each went through the logcat pipe and the
+ * executor blocked whenever the log thread fell behind (Mali race log:
+ * 50k of 57k lines in 90 s were DMA_PUT). */
+static int s_nv2a_verbose = 0;
 int xbox_log_quiet(void);           /* kernel_bridge.c */
 
 /* The display framebuffer, as reported by AvSetDisplayMode. Checksummed once a
@@ -976,7 +984,7 @@ static void framebuffer_probe_tick(void)
     uint32_t sum = 0, nonzero = 0, i, n;
     const uint32_t *p;
 
-    if (!s_nv2a_trace || !s_fb_va || !s_fb_pitch)
+    if (!s_nv2a_verbose || !s_fb_va || !s_fb_pitch)
         return;
     if (last_ms && (now - last_ms) < 1000)
         return;
@@ -1227,6 +1235,12 @@ static DWORD WINAPI nv2a_flag_thread(LPVOID param)
 static DWORD WINAPI nv2a_ack_thread(LPVOID param)
 {
     volatile uint32_t *regs = (volatile uint32_t *)param;
+    extern void xbox_fast_cores_pin(void);   /* win32_compat.c */
+    extern void xbox_perf_hint_thread(void); /* the port's, or a no-op */
+    /* The pushbuffer executor records every draw: with the guest thread
+     * it sets the frame rate, so it keeps to the big cores too. */
+    xbox_fast_cores_pin();
+    xbox_perf_hint_thread();
     while (!InterlockedCompareExchange(&g_nv2a_ack_stop, 0, 0)) {
         nv2a_ack_flags(regs);
         {
@@ -1355,7 +1369,7 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
                  * in its device struct rather than assuming 0xFD800000, and
                  * mirroring the wrong block leaves it spinning on a GET that
                  * never moves. */
-                if (s_nv2a_trace && !xbox_log_quiet()) {
+                if (s_nv2a_verbose && !xbox_log_quiet()) {
                     uint32_t g = *(volatile uint32_t *)
                                  ((char *)regs + NV2A_USER_DMA_GET);
                     fprintf(stderr, "  [NV2A] DMA_PUT = 0x%08X  DMA_GET = "
@@ -1365,7 +1379,7 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
                 }
             }
         }
-        if (s_nv2a_trace && !xbox_log_quiet()) {
+        if (s_nv2a_verbose && !xbox_log_quiet()) {
             static uint32_t last_start = 0xFFFFFFFFu;
             uint32_t start = *(volatile uint32_t *)((char *)regs + 0x600800);
             if (start != last_start) {
@@ -2799,6 +2813,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
         s_nv2a_trace = getenv("RECOMP_NV2A_TRACE") != NULL
                     || getenv("RECOMP_PB_SCAN") != NULL
                     || getenv("RECOMP_PB_EXEC") != NULL;
+        s_nv2a_verbose = getenv("RECOMP_NV2A_TRACE") != NULL;
         if (g_nv2a_memory) {
             fprintf(stderr, "  NV2A register aperture: %u MB at Xbox VA "
                     "0x%08X (zeroed, no register semantics)\n",
