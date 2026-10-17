@@ -77,5 +77,10 @@
  {
   "start": "0x002E294E",
   "note": "Follows a ret with no padding; tail-jump target left as an empty stub (push [0x4E43D8]; call 0x2B4F0C)."
+ },
+ {
+  "start": "0x0018D100",
+  "observed": true,
+  "note": "Race script native AllHumanPlayersDone (registered by push in 0x199DFA, name 0x3DCD08); starts right after a ret with no padding, so disasm never split it off. Unresolved, every race-finish check failed and races never ended."
  }
 ]
