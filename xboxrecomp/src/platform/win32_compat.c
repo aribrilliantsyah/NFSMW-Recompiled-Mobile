@@ -876,10 +876,17 @@ int xbox_guest_core(void)
  * running lifted code and the pushbuffer executor recording Vulkan -- are
  * each about one core busy, and the scheduler moved them onto an A55 now
  * and then (half the speed): the race fps went 55 -> 35 -> 55 with nothing
- * changing on screen. Both are kept on the fastest cluster: every core whose
- * cpuinfo_max_freq is the highest, and the next tier too when that is a
- * single prime core (it would leave the two threads one core). Android by
- * default; RECOMP_BIG_CORES=0 turns it off, =1 turns it on elsewhere. */
+ * changing on screen. Those two threads alone are kept on the fastest
+ * cluster: every core whose cpuinfo_max_freq is the highest, and the next
+ * tier too when that is a single prime core. Only those two: an earlier
+ * build pinned every guest, DPC and interrupt thread there too (all of them
+ * call xbox_guest_pin), and on the phone that build later showed START not
+ * opening the pause menu after minutes of racing, a finish that never
+ * completed and a vanishing minimap. Whether the pinning caused those is
+ * NOT established (not reproduced on Linux, where the pinning is off);
+ * narrowing it is a precaution. Callers: main.c (the boot thread, which
+ * runs the frame loop) and the executor thread. Android by default;
+ * RECOMP_BIG_CORES=0 turns it off, =1 turns it on elsewhere. */
 #if !defined(__SWITCH__) && !defined(__APPLE__)
 static int fast_cores_mask(cpu_set_t *set)
 {
@@ -960,10 +967,8 @@ void xbox_guest_pin(int interrupt)
 {
     int core = xbox_guest_core();
     const char *e = getenv("RECOMP_GUEST_ONE_CORE");
-    if (core < 0) {
-        xbox_fast_cores_pin();     /* Android: the big cluster (no-op elsewhere) */
+    if (core < 0)
         return;
-    }
     if (interrupt && e && *e == '2')
         return;                /* mode 2: guest threads only, interrupts float */
 #if defined(__SWITCH__)

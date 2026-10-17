@@ -597,8 +597,9 @@ static void barrier_all(void)
  * visible. So the next pass's vertex work need not wait for anything: on a
  * tiler (Mali, Adreno) ALL_COMMANDS -> ALL_COMMANDS kept each pass's binning
  * behind the previous pass's last fragment, a bubble at every one of the
- * ~16 render-target changes of a race frame. RECOMP_VK_BARRIER=all keeps
- * the full barrier. */
+ * ~16 render-target changes of a race frame. Opt-in (RECOMP_VK_BARRIER=pass)
+ * until it is checked on the phone: it shipped with the build that showed a
+ * vanishing minimap, and the minimap is a render target the HUD samples. */
 static void barrier_pass(void)
 {
     static int full = -1;
@@ -606,7 +607,7 @@ static void barrier_pass(void)
     int i;
     if (full < 0) {
         const char *e = getenv("RECOMP_VK_BARRIER");
-        full = e && !strcmp(e, "all");
+        full = !(e && !strcmp(e, "pass"));
     }
     if (full) {
         barrier_all();

@@ -258,7 +258,9 @@ int game_main(void)
     xbox_guest_pin(0);     /* the boot thread becomes the title's first thread */
     {
         extern void xbox_perf_hint_thread(void);   /* Android ADPF, else a no-op */
-        xbox_perf_hint_thread();                    /* it runs the frame loop */
+        extern void xbox_fast_cores_pin(void);     /* big cluster, this thread only */
+        xbox_fast_cores_pin();                      /* it runs the frame loop */
+        xbox_perf_hint_thread();
     }
     char xbe_path[512];
     const char *game_dir;

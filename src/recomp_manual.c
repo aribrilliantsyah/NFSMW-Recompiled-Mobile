@@ -143,16 +143,22 @@ void sub_00374020(void)
              * the same (sub_0010B240), and waiting for the previous frame's
              * fence there took Eden races from 9-18 to 21-24 fps. Here too:
              * two frames in flight, game and executor on their own cores.
-             * NFSMW_FRAME_LAG=0 (or RECOMP_FRAME_LAG=0) waits for this
-             * frame's fence as the title does. */
+             * Opt-in (NFSMW_FRAME_LAG=1), as in NFSU2/Carbon: on the phone
+             * the build that had it on by default showed, after minutes of
+             * racing, START no longer opening the pause menu, a finish that
+             * never completed and the minimap vanishing. Not proven to be
+             * this (not reproduced on Linux with it on, 8 min race), but two
+             * frames in flight is the riskiest change of that build: the game
+             * may rewrite its own buffers once its fence returns while the
+             * executor still reads them a frame behind. */
             static int lag = -1;
             static uint32_t prev;
             if (lag < 0) {
                 const char *e = getenv("NFSMW_FRAME_LAG");
                 if (!e) e = getenv("RECOMP_FRAME_LAG");
-                lag = !(e && *e == '0');
+                lag = e && *e == '1';
                 fprintf(stderr, "[D3D] frame fence: %s\n",
-                        lag ? "previous frame (NFSMW_FRAME_LAG=0 for this frame)" : "this frame");
+                        lag ? "previous frame (NFSMW_FRAME_LAG=1)" : "this frame");
             }
             if (lag) {
                 uint32_t mine = MEM32(esp + 4);
