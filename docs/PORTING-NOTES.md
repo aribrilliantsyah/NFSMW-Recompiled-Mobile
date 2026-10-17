@@ -93,3 +93,28 @@ The Drive diamond had B (NOS) at the bottom and A (E-BRAKE) on the right:
 swapped against the Xbox pad. Now A bottom, B right (big), X left, Y top;
 `LAYOUT_VERSION` 4 clears saved positions. race-bench.sh's A tap moved
 with it (W-225, 616 on a 1080-high panel).
+
+## Races never finished: AllHumanPlayersDone unresolved (fixed 2026-10-17)
+
+User report: at the finish line the race does not end, the car keeps
+driving round. Phone log (`nfsmw_log.txt`, 10:01 session): one
+`[ICALL] Failed to resolve VA 0x0018D100` during the race. 0x18D100 is
+pushed in 0x199DFA together with the string 0x3DCD08
+`"AllHumanPlayersDone"`: the race script's natives table (registered via
+sub_00196080, next to AllRacersDone 0x187D80 and IsLANGame 0x188080). Its
+body starts straight after the `ret` of sub_0018D090 with no padding, so
+disasm never split it off and no function existed for the dispatch. It is
+the check that ends the race once every human crossed the line; failing,
+the race goes on. Seeded (config/seed_functions.json), full regen. A scan
+of all 27 natives pushed to 0x196080/0x1966C0 found no other missing one.
+
+## START after minutes in a race / minimap gone (open, 2026-10-17)
+
+Reported on the phone with the build that had frame lag on by default and
+the guest/DPC/ISR threads all pinned to the two big cores. Not reproduced
+on Linux: an 8-minute Quick Race (frame lag on, START every minute) opened
+the pause menu every time and the minimap stayed. The phone log of that
+session shows no error near it. As precautions the frame lag is opt-in
+again (`NFSMW_FRAME_LAG=1`), the narrow pass barrier is opt-in
+(`RECOMP_VK_BARRIER=pass`), and only the frame-loop thread and the
+executor are pinned. Next phone report decides which of them it was.

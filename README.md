@@ -281,10 +281,10 @@ in `nfsmw_env.txt` in `Android/data/com.ryuna.nfsmw2005x/files/`, one
 | Variable | Meaning |
 |---|---|
 | `NFSMW_FPS_CAP=30` | Keep the title's 30 fps flip interval in races. |
-| `NFSMW_FRAME_LAG=0` | Wait for each frame's own GPU fence (the title's way) instead of the previous frame's. |
+| `NFSMW_FRAME_LAG=1` | Wait for the previous frame's GPU fence instead of this frame's (game and renderer overlap; experimental). |
 | `NFSMW_PERF_HINT=0` | No Android performance hint session (ADPF, Android 13+). |
-| `RECOMP_BIG_CORES=0` | Let the guest and pushbuffer threads float instead of keeping them on the fastest CPU cluster. |
-| `RECOMP_VK_BARRIER=all` | Full pipeline barrier between render passes (the old behaviour). |
+| `RECOMP_BIG_CORES=0` | Let the frame-loop and pushbuffer threads float instead of keeping them on the fastest CPU cluster. |
+| `RECOMP_VK_BARRIER=pass` | Narrower barrier between render passes (experimental). |
 | `RECOMP_QUIET=0` | Periodic kernel/GPU summaries and per-read lines in the log (off by default on Android). |
 | `RECOMP_NV2A_TRACE=1` | Log every pushbuffer kickoff (`DMA_PUT`) and scanout change. |
 | `NFSMW_LOG_FILE=1` | Write `nfsmw_log.txt` (the launcher's Debug log). |
