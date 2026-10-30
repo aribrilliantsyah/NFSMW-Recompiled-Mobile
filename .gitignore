@@ -36,3 +36,6 @@ mostwanted.toml
 
 # Local temporary folder
 .local
+
+# Linux host build (linux/CMakeLists.txt) and its run folders
+/linux/build*/
