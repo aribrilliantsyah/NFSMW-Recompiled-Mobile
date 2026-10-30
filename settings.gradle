@@ -11,5 +11,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "Most Wanted Android"
+rootProject.name = "nfsmw"
 include ":app"

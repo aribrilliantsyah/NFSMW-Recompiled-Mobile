@@ -16,28 +16,34 @@ tasks.register("fetchSDL") {
 }
 preBuild.dependsOn "fetchSDL"
 
+// -PnativeLibs=<dir>: <dir>/arm64-v8a/ with libmain.so, libSDL3.so and libc++_shared.so built already (scripts/build.sh builds them with
+// the NDK's CMake toolchain), packaged as they are; without it Gradle builds them itself (build.bat)
+def nativeLibs = project.hasProperty("nativeLibs") ? file(project.nativeLibs) : null
+
 android {
-    namespace "com.racas.mostwanted"
-    compileSdk 34
+    namespace "com.ryuna.nfsmw2005x"
+    compileSdk 36
     ndkVersion "28.2.13676358"
 
     defaultConfig {
-        applicationId "com.racas.mostwanted"
-        minSdk 29
-        targetSdk 34
+        applicationId "com.ryuna.nfsmw2005x"
+        minSdk 30
+        targetSdk 36
         // -PversionCode=<n> -PversionName=<name>: the release workflow sets them from the tag
         versionCode project.hasProperty("versionCode") ? project.versionCode.toInteger() : 1
-        versionName project.hasProperty("versionName") ? project.versionName : "1.0"
+        versionName project.hasProperty("versionName") ? project.versionName : "0.1.0"
         ndk {
             abiFilters "arm64-v8a"
         }
-        externalNativeBuild {
-            cmake {
-                arguments "-DANDROID_STL=c++_shared"
-                // -PxbeGenerated=<dir> -PxbeImage=<file>: recompiled code from somewhere else than generated/game
-                if (project.hasProperty("xbeGenerated")) arguments "-DXBE_GENERATED=${project.xbeGenerated}"
-                if (project.hasProperty("xbeImage")) arguments "-DXBE_IMAGE=${project.xbeImage}"
-                if (project.hasProperty("verboseLog")) arguments "-DXBE_VERBOSE_LOG=ON"
+        if (!nativeLibs) {
+            externalNativeBuild {
+                cmake {
+                    arguments "-DANDROID_STL=c++_shared", "-DANDROID_PLATFORM=android-30"
+                    // -PxbeGenerated=<dir> -PxbeImage=<file>: recompiled code from somewhere else than generated/game
+                    if (project.hasProperty("xbeGenerated")) arguments "-DXBE_GENERATED=${project.xbeGenerated}"
+                    if (project.hasProperty("xbeImage")) arguments "-DXBE_IMAGE=${project.xbeImage}"
+                    if (project.hasProperty("verboseLog")) arguments "-DXBE_VERBOSE_LOG=ON"
+                }
             }
         }
     }
@@ -65,24 +71,36 @@ android {
         }
         debug {
             // the recompiled code is far too slow unoptimized
-            externalNativeBuild {
-                cmake {
-                    arguments "-DCMAKE_BUILD_TYPE=Release"
+            if (!nativeLibs) {
+                externalNativeBuild {
+                    cmake {
+                        arguments "-DCMAKE_BUILD_TYPE=Release"
+                    }
                 }
             }
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            path "../CMakeLists.txt"
-            version "3.31.6"
+    if (!nativeLibs) {
+        externalNativeBuild {
+            cmake {
+                path "../CMakeLists.txt"
+                version "3.31.6"
+            }
         }
     }
 
     sourceSets {
         main {
             java.srcDirs += new File(sdlDir, "android-project/app/src/main/java")
+            if (nativeLibs) jniLibs.srcDirs = [nativeLibs]
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // the .so files uncompressed and page aligned in the APK
+            useLegacyPackaging = false
         }
     }
 
