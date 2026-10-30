@@ -76,7 +76,7 @@ body:
     attributes:
       label: Log
       description: |
-        Attach `mostwanted.log` from `MostWanted/logs` on the phone's storage (`Android/data/com.racas.mostwanted/files/logs` without all files access; drag it here).
+        Attach `mostwanted.log` from `Android/data/com.ryuna.nfsmw2005x/files/logs` (drag it here).
         For a crash, an `adb logcat` taken right after it happens helps a lot.
       render: text
     validations:

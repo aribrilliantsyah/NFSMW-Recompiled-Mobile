@@ -1,7 +1,7 @@
 # Need for Speed: Most Wanted for Android
 An unofficial native Android port of the original Xbox version of *Need for Speed: Most Wanted* (Black Edition), with touch controls, controller and keyboard support and extended graphics options.
 
-The game's x86 code is statically recompiled ahead of time to C++ with [XboxXBE-Recomp](https://github.com/TGP482/XboxXBE-Recomp), then built for arm64. Drawing goes through Vulkan, and windowing, input and audio through SDL3. No emulator is involved. The Android host (Vulkan renderer, DirectSound, touch controls, settings panel) comes from [Black-Android](https://github.com/RanggaCasper/Black-Android), as [ShaolinMonks-Android](https://github.com/RanggaCasper/ShaolinMonks-Android) carries it.
+The game's x86 code is statically recompiled ahead of time to C++ with [XboxXBE-Recomp](https://github.com/TGP482/XboxXBE-Recomp), then built for arm64. Drawing goes through Vulkan, and windowing, input and audio through SDL3. No emulator is involved. The engine (Vulkan renderer, Direct3D 8 and DirectSound on the host, the game's patches) comes from [MostWanted-Android](https://github.com/RanggaCasper/MostWanted-Android) by RanggaCasper; the Android shell (launcher, ISO installer, touch controls and their editors, controller mapping) from nfsw-recompiled-mobile.
 
 > [!NOTE]
 > This project does not include any game assets. You must provide the files from your own legally acquired copy of the game to install or build.
@@ -21,37 +21,34 @@ The game's x86 code is statically recompiled ahead of time to C++ with [XboxXBE-
 
 ## Installation
 1. Install the APK.
-2. Open **Most Wanted** and allow **all files access** when it asks (on Android 10, the **storage** permission).
-3. Copy the game into `/storage/emulated/0/MostWanted`, or into a `MostWanted` folder at the top of your SD card: either the disc image (`.iso`) or `default.xbe` with the disc's `NFS` folder beside it. The app creates the folder on the phone's storage once access is allowed, and starts the game as soon as it finds the files.
+2. Open **NFS Most Wanted** and tap **INSTALL FROM ISO…**: pick the Xbox disc image (`.iso`). It is extracted once into `Android/data/com.ryuna.nfsmw2005x/files/game` (about 2.9 GB); the `.iso` can be deleted afterwards. A folder extracted on a PC (`default.xbe` with the disc's `NFS` folder beside it) works too: **Choose folder…** (asks for all files access).
+3. Tap **PLAY**.
 
-If you don't grant that access, `Android/data/com.racas.mostwanted/files/assets` works too.
-
-Settings (`mostwanted.toml`, `android.toml`, `layout.toml`), saves (`hdd`) and the shader cache are stored in `Android/data/com.racas.mostwanted/files`. Logs go in `/storage/emulated/0/MostWanted/logs` (in `Android/data/com.racas.mostwanted/files/logs` without all files access).
+The launcher writes the engine's settings (`mostwanted.toml`) and the HUD layout (`layout.toml`) in `Android/data/com.ryuna.nfsmw2005x/files` at each PLAY; saves (`hdd`), the shader cache and the logs (`logs`) are there too.
 
 The supported disc is the USA Black Edition (`default.xbe` SHA-1 `f636a16af04171089f879a4bed646e185c734233`).
 
 ## Features
-The settings panel opens from the gear at the top left of the screen (or F10 on a keyboard). Android's back button is the controller's Start, which pauses the game.
+Every setting is in the launcher. In the game, the ☰ button (it shows with HIDE/TOUCH after a touch) resumes, opens the touch layout editor or goes back to the launcher. Android's back button is the controller's Start in a race (the pause menu) and B in the menus.
 
 ### Graphics
+- **Widescreen**: on, the whole screen, the 3D view widened to the phone's shape (Hor+) and the menus and HUD laid out for it; off, the Xbox's 4:3 picture with side bars.
 - **Render Resolution**: 20% to 200% of the screen's height, instead of the original 640x480.
-- **V-Sync**, **Max Frame Rate** (unlimited, the display's refresh rate or a custom cap) and an **FPS Counter**.
+- **V-Sync**, **Max Frame Rate** (30 to 120, the display's refresh rate or unlimited) and an **FPS Counter** with CPU / GPU load and temperatures.
 - **Anisotropic Filtering**, **Anti-Aliasing** (FXAA, SSAA 2x) and **Screen Filters**.
+- **Yellow filter** (the game's colour grading, off by default), car and road reflections, motion blur, bloom, fog, shadows, particles, rain and screen raindrops, shader preloading.
 
 ### Touch Controls
-A full Xbox controller on the screen:
-- The left side of the screen is the **left stick**, wherever your thumb comes down. A drag on the right side of the screen is the **right stick**.
-- **A**, **B**, **X**, **Y** in the controller's diamond and colours, **Black** and **White**, the **triggers** (RT gas, LT brake); the face buttons show the game's own controls (A E-brake, B nitrous, X speedbreaker, Y look back), **Start**, **Back** and a **D-pad**.
-- **Controls Layout**: *Default* (triggers at the top corners) or *Low Triggers*, with the controls' opacity and overall size.
-- **Edit Controls Position**: drag each control where you want it. To resize one, select it and tap **−** or **+**, or pinch it with a second finger.
+Two layouts, **Full** (the whole Xbox controller) and **Drive** (steering by stick, arrows or tilting the phone, gas and brake pedals, nitrous, e-brake, speedbreaker), each edited in the launcher or in the game: move, resize and fade the controls. **Edit HUD position** moves the speedometer, the minimap, the race information and the EA Trax banner. In the game's menus a tap on the highlighted item is A and a swipe steps through the list.
 
 ### Other Input
-- **Controller**: any controller SDL3 supports, with rumble. The touch controls hide while a controller is in use.
-- **Keyboard**, with every controller button and both sticks rebindable.
+- **Controller**: any controller SDL3 supports, with rumble (the phone vibrates without one), each Xbox button remappable in the launcher. The touch controls hide while a controller is in use.
+- **Keyboard**.
 
 ### General
-- **Language**: English, French, German, Italian or Spanish. The game takes it from the console's language setting, which this sets; it applies at the next start. Indonesian translates the settings panel and plays the game in English.
-- **Audio Output**: automatic, mono, stereo or 5.1 surround.
+- **Language**: English, or Indonesian (the recompilation's text and the game's menus translated).
+- **Audio Output**: automatic, stereo, 5.1 surround or mono.
+- **Skip movies** and **cheats** (infinite nitrous and speedbreaker, max cash, no police, unlock all).
 - **Background Pause**: the game and its sound pause while the app is in the background.
 
 ## Status
@@ -61,36 +58,31 @@ Tested on a Xiaomi Pad 7 (Snapdragon 7+ Gen 3): boot, the menus, the career intr
 - Most Wanted runs many of its vertex programs from the GPU's program memory (`LoadVertexShaderProgram` and `SelectVertexShaderDirect`), pushes its vertex constants inline, sets its pixel combiners with render states and gives its own frame and depth buffers; the host handles each.
 - Visibility tests (the sun's glare) are not counted yet: the glare stays off.
 - Known: a story film (after the first race) has been seen to stop on its first picture; a rare crash in the game's own code has been seen twice.
-- Nothing game-specific is patched yet: no frame rate unlock or cheats.
 
-Logs are in `/storage/emulated/0/MostWanted/logs` (or `Android/data/com.racas.mostwanted/files/logs` without all files access). Please include the log when reporting a problem.
+Logs are in `Android/data/com.ryuna.nfsmw2005x/files/logs`. Please include the log when reporting a problem.
 
 ## System Requirements
-- **Android** 10 or newer, arm64.
+- **Android** 11 or newer, arm64.
 - **GPU** with a Vulkan 1.1 driver, for example Adreno 6xx or newer, Mali-G7x or newer, or Xclipse.
 - **Memory**: 4 GB.
 - **Storage**: 4 GB for the game files and saves.
 
 ## Building
-Building requires a Windows PC.
+On Linux: `scripts/build.sh` (on Windows, `build.bat`).
 
-### 1. Clone this repository
+1. Put `default.xbe` in `assets/` (or the disc image in `assets/` or `iso/`; `python3` extracts the xbe from it), or pass `--xbe <file>`.
+2. Install CMake, Ninja, Clang, Java 17 to 21 and the Android SDK with Platform 36 and NDK `28.2.13676358` (`ANDROID_HOME`, default `~/Documents/Repos/Android/SDK`).
+3. Run:
+   ```
+   scripts/build.sh                    # debug APK: app/build/outputs/apk/debug/app-debug.apk
+   scripts/build.sh --release          # release APK, debug key unless BLACK_KEYSTORE is set
+   scripts/build.sh --reuse-generated  # keep generated/game, skip the recompile
+   ```
+   It builds the recompiler, recompiles the xbe into `generated/game`, builds `libmain.so` with the NDK into `out/build/android` and packages the APK with Gradle. The first build compiles the whole game for arm64 (10 to 90 minutes).
 
-### 2. Add the game files
-Put `default.xbe` in `assets/`, or put the disc image (`.iso`) in `assets/` or `iso/`. The build extracts `default.xbe` from the image.
+Install the APK with `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
 
-### 3. Install the dependencies
-- [Visual Studio 2022](https://visualstudio.microsoft.com/downloads/) with *Desktop development with C++*. The recompiler runs on the PC.
-- [Android Studio](https://developer.android.com/studio). In its SDK Manager, install Android SDK Platform 34, NDK `28.2.13676358` and CMake `3.31.6`. Gradle needs Java 17 to 21 (`JAVA_HOME`).
-- [Python](https://www.python.org/), needed only to extract `default.xbe` from a disc image.
-
-### 4. Build
-Run `build.bat`. It builds the recompiler, recompiles the xbe into `generated/game`, then builds `app/build/outputs/apk/release/app-release.apk` with Gradle. The first build compiles the whole game for arm64 and takes 30 to 90 minutes.
-
-Install the APK with:
-```
-adb install -r app/build/outputs/apk/release/app-release.apk
-```
+The Linux host for benchmarking (`linux/`) builds from the same tree; its commands are at the top of `linux/CMakeLists.txt`.
 
 The SDK is vendored in `sdk/`, at the upstream commit in `sdk/UPSTREAM_COMMIT`, with one change: the console's language comes from `app::ConsoleLanguage()` (`sdk/runtime/kernel/xboxkrnl.cpp`).
 

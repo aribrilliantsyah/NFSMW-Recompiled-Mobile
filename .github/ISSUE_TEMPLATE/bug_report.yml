@@ -104,14 +104,14 @@ body:
     attributes:
       label: Log
       description: |
-        Attach `mostwanted.log` from `MostWanted/logs` on the phone's storage (`Android/data/com.racas.mostwanted/files/logs` without all files access; drag it here), or paste its contents.
+        Attach `mostwanted.log` from `Android/data/com.ryuna.nfsmw2005x/files/logs` (drag it here), or paste its contents.
       render: text
 
   - type: textarea
     id: settings
     attributes:
       label: Settings
-      description: Paste `mostwanted.toml` from `Android/data/com.racas.mostwanted/files` if you changed any settings.
+      description: Paste `mostwanted.toml` from `Android/data/com.ryuna.nfsmw2005x/files` if you changed any settings.
       render: toml
 
   - type: textarea

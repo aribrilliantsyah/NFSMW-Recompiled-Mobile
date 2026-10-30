@@ -28,12 +28,11 @@
 ## 🚀 Installation
 
 1. Install **`{{APK}}`** on your phone.
-2. Open **Most Wanted** and allow **all files access** when it asks.
-3. Copy the game into **`/storage/emulated/0/MostWanted`**, or into a `MostWanted` folder on your SD card: the disc image (`.iso`), or `default.xbe` with the disc's `NFS` folder beside it.
-4. The game starts as soon as it finds the files.
+2. Open **NFS Most Wanted**, tap **INSTALL FROM ISO…** and pick the Xbox disc image (`.iso`); it is extracted once into the app's folder. A folder with `default.xbe` and the disc's `NFS` folder works too (**Choose folder…**).
+3. Tap **PLAY**.
 
 > [!TIP]
-> If you don't grant all files access, put the game in `Android/data/com.racas.mostwanted/files/assets` instead. Settings, saves and the shader cache are stored in `Android/data/com.racas.mostwanted/files`; logs go in `MostWanted/logs` (in `Android/data/com.racas.mostwanted/files/logs` without all files access).
+> Settings, saves, the shader cache and the logs are in `Android/data/com.ryuna.nfsmw2005x/files`.
 
 ## ✨ Features
 
