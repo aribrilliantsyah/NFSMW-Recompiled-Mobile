@@ -27,6 +27,9 @@ struct Options {
     uint32_t screen_filter = 0;  // the present's look: 0 none, 1 sharpen, 2 vivid, 3 scanlines, 4 CRT, 5 HDR
     uint32_t anti_aliasing = 0;  // kAaOff, kAaFxaa or kAaSsaa
     uint32_t aspect_ratio = 0;  // the frame's shape in hundredths (133 is 4:3), 0 the whole screen; common/aspect.h
+    // the launcher's WIDESCREEN switch: off, the console's 4:3 frame pillarboxed whatever aspect_ratio says; on,
+    // aspect_ratio's (the whole screen by default) with the console's widescreen flag from 3:2 on
+    bool widescreen = true;
     bool bloom = true;  // the glow added over the frame, native/vulkan.cpp skips it when off
     bool fog = true;    // the distance fog, native/vulkan.cpp draws without it when off
     // the cars' reflection, six more views: drawn every frame (0), every 2nd (1), every 4th (2) or off (3, a grey

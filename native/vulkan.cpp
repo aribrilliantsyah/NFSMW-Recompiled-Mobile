@@ -3825,7 +3825,6 @@ void VulkanBackend::RenderUi() {
     ui::NewFrame(float(swap_extent_.width), float(swap_extent_.height));
     ImGui::NewFrame();
     if (app::kGame.ui) app::kGame.ui(fps_);
-    touch::Draw();
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), Cb());
 }

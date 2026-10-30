@@ -29,8 +29,6 @@ uint32_t HostThunk(X86Func* fn);  // sdk/runtime/cpu/dispatch.cpp
 
 namespace game {
 
-void OptionsMenuTick(X86Context& ctx);  // options_menu.cpp
-
 namespace {
 
 // cFEng's instance; its first field the FEngine
@@ -117,7 +115,6 @@ void GetMouseInfo(X86Context& ctx, uint8_t*) {
     kernel::W16(info + 2, uint16_t(here ? int16_t(g_y.load()) : kAway));
     kernel::W16(info + 4, 0);
     kernel::W16(info + 6, down ? 1 : 0);  // FEMouse_Left
-    OptionsMenuTick(ctx);
     kernel::Return(ctx, 0, 1);
 }
 

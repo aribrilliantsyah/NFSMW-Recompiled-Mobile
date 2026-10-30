@@ -1,6 +1,7 @@
 #pragma once
-// What the Android host's parts share: the window, the app's lifecycle and the event routing
+// What the Android host's parts share: the window, the app's lifecycle, the event routing and the launcher shell
 #include <cstdint>
+#include <filesystem>
 
 union SDL_Event;
 struct SDL_Window;
@@ -10,9 +11,6 @@ struct Pad;
 }
 
 namespace host {
-
-// the shared storage's folder for the game, readable and writable with all files access (game_files.cpp)
-inline constexpr const char* kShared = "/storage/emulated/0/MostWanted";
 
 SDL_Window* Window();
 // the app is in front with a window to draw to; the renderer and the game wait while it is not
@@ -24,6 +22,19 @@ void WaitForeground();
 // the window's size in pixels
 void WindowPixels(int& w, int& h);
 
+// the game folder the launcher picked (GameActivity.gameDir: Settings.gameDir, the app's files/game by default);
+// empty off Android or when the activity has none
+std::filesystem::path LauncherGameDir();
+// the game's rumble on the phone (GameActivity.rumble), for port 0 with no controller; 0 to 65535 per motor
+void PhoneRumble(uint16_t left, uint16_t right);
+// the performance overlay's numbers, percent and degrees, -1 where the device does not tell (native/stats.cpp)
+void SamplePerf();
+float CpuLoad();
+float GpuLoad();
+float CpuTemp();
+float GpuTemp();
+float BatteryTemp();
+
 }  // namespace host
 
 // controllers through SDL (input.cpp): the main thread hands over their plug events
@@ -31,44 +42,16 @@ namespace input {
 void OnPadEvent(const SDL_Event& e);
 }
 
-// the touch controls and SDL's keyboard and mouse (touch.cpp)
+// SDL's keyboard, mouse and the touches the overlay leaves to the game: FEng's menus by touch (touch.cpp)
 namespace touch {
-// main thread, every input event; true when the touch controls took it
+// main thread, every input event; true when it was taken
 bool OnEvent(const SDL_Event& e);
-// the touch controls' buttons and stick onto port 0's pad, before the game reads it
-void Apply(int port, input::Pad& pad);
-// inside the ImGui frame: the controls over the picture
-void Draw();
-// any touch on the screen in the last few seconds: the controls show
-bool Shown();
-// main thread, each turn of the event loop: the tilt steering's sensor (gyro.cpp)
-void Pump();
-// a controller was used: the game's hints name its buttons again, not the touch controls
-void PadUsed();
-// the layout's settings in the game's options (src/common/menu.cpp), saved at once
-uint32_t ControlsOpacity();  // percent
-void StepOpacity(int step);
-uint32_t ControlsSize();  // percent of each control's own size
-void StepSize(int step);
-const char* StickModeName();  // FLOATING or FIXED
-void StepStickMode(int step);
-const char* SteeringName();  // ARROWS, WHEEL or TILT: what steers in the RACING layout
-void StepSteering(int step);
-bool TiltSteering();         // any thread: STEERING is TILT
-void EditLayout();  // the controls over the screen to drag where they go
-void LoadArt();     // main thread, once ImGui's context is made: the controls' art into its font atlas
+// port 0's pad before the game reads it: the menus' taps and swipes, the back key
+void Apply(input::Pad& pad);
 }  // namespace touch
 
-// steering by tilting the phone (gyro.cpp), main thread
-namespace gyro {
-void OnEvent(const SDL_Event& e);
-void Pump();     // the accelerometer open while STEERING is TILT and the app in front, closed otherwise
-float Steer();   // any thread: -1 a full lock left to 1 right, 0 while off
-}  // namespace gyro
-
-// ImGui's input from SDL's events (ui.cpp), main thread, under app::UiLock
+// ImGui's frame (ui.cpp): no input, the FPS counter alone draws in it
 namespace ui {
-void OnEvent(const SDL_Event& e);
 // render thread, before ImGui::NewFrame: the display size and the frame time
 void NewFrame(float width, float height);
 // render thread, under app::UiLock, before the backend's NewFrame: the game's font into the atlas once it is loaded;

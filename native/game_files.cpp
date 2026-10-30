@@ -1,10 +1,7 @@
-// The game on Android: its files or a disc image (.iso) in the MostWanted folder on the phone's storage or on an SD
-// card (all files access granted) or in the app's own assets folder. The xbe must be the one this build was recompiled
-// from: the disc's USA and Europe releases share it.
-#include <jni.h>
-
+// The game on Android: the folder the launcher picked (Settings.gameDir: the ISO installer's files/game in the app's
+// folder, or one the player chose), its extracted files or a disc image (.iso) in it, then the app's own files/game
+// and files/assets. The xbe must be the one this build was recompiled from: the disc's USA and Europe releases share it.
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_system.h>
 
 #include <algorithm>
 #include <cctype>
@@ -26,68 +23,12 @@ namespace {
 
 namespace fs = std::filesystem;
 
-// host::kShared: the files or the image in it, or in its assets folder
-using host::kShared;
-constexpr const char* kVolumes = "/storage";
-
-// the MostWanted folders MostWantedActivity has from Android's storage volumes, which some phones don't show in
-// /storage
-std::vector<fs::path> ActivityCardFolders() {
-    std::vector<fs::path> out;
-    auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
-    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
-    if (!env || !activity) return out;
-    jclass cls = env->GetObjectClass(activity);
-    jmethodID m = env->GetMethodID(cls, "cardFolderPaths", "()[Ljava/lang/String;");
-    auto paths = m ? static_cast<jobjectArray>(env->CallObjectMethod(activity, m)) : nullptr;
-    if (env->ExceptionCheck()) {
-        env->ExceptionClear();
-        paths = nullptr;
-    }
-    for (jsize i = 0, n = paths ? env->GetArrayLength(paths) : 0; i < n; i++) {
-        auto s = static_cast<jstring>(env->GetObjectArrayElement(paths, i));
-        if (!s) continue;
-        const char* c = env->GetStringUTFChars(s, nullptr);
-        if (c) {
-            out.emplace_back(c);
-            env->ReleaseStringUTFChars(s, c);
-        }
-        env->DeleteLocalRef(s);
-    }
-    if (paths) env->DeleteLocalRef(paths);
-    env->DeleteLocalRef(cls);
-    env->DeleteLocalRef(activity);
-    return out;
-}
-
-// the MostWanted folder on each SD card or USB stick Android has mounted, /storage/<volume id>/MostWanted; all
-// files access reads them as it does the phone's own storage
-std::vector<fs::path> RemovableFolders() {
-    std::vector<fs::path> out = ActivityCardFolders();
-    // an entry's own error apart from the listing's: one that is no folder must not end the walk
-    std::error_code ec, dir_ec;
-    for (auto& e : fs::directory_iterator(kVolumes, ec)) {
-        std::string name = e.path().filename().string();
-        if (name == "emulated" || name == "self" || !e.is_directory(dir_ec)) continue;
-        out.push_back(e.path() / "MostWanted");
-    }
-    static bool logged = false;
-    if (ec && !logged) {
-        LOGW("game: %s cannot be listed: %s", kVolumes, ec.message().c_str());
-        logged = true;
-    }
-    std::sort(out.begin(), out.end());
-    out.erase(std::unique(out.begin(), out.end()), out.end());
-    return out;
-}
-
+// the launcher's folder first, then the app's own: an install the launcher has not been told of yet still starts
 std::vector<fs::path> AssetFolders() {
-    std::vector<fs::path> out = {fs::path(kShared), fs::path(kShared) / "assets"};
-    for (const fs::path& card : RemovableFolders()) {
-        out.push_back(card);
-        out.push_back(card / "assets");
-    }
-    out.push_back(ExeDir() / "assets");
+    std::vector<fs::path> out;
+    if (fs::path dir = host::LauncherGameDir(); !dir.empty()) out.push_back(dir);
+    for (const char* sub : {"game", "assets"})
+        if (std::find(out.begin(), out.end(), ExeDir() / sub) == out.end()) out.push_back(ExeDir() / sub);
     return out;
 }
 
@@ -153,28 +94,13 @@ void CheckImage(const kernel::Disc& disc, const fs::path& iso) {
              iso.string().c_str(), past, (unsigned long long)size, first.c_str());
 }
 
-// no game yet: the activity's dialog tells the player where it goes and asks for the access; this waits a moment
-// before looking again, keeping SDL's events moving
-void WaitForGame() {
-    static bool logged = false;
-    if (!logged) {
-        std::error_code ec;
-        fs::is_directory(kShared, ec);
-        std::string cards;
-        for (const fs::path& card : RemovableFolders()) cards += ", " + card.string();
-        LOGE("game: no game files in %s%s or %s%s, waiting for them", kShared, cards.c_str(),
-             (ExeDir() / "assets").c_str(), ec == std::errc::permission_denied ? ", no access to the first" : "");
-        logged = true;
-    }
-    for (int i = 0; i < 10; i++) {
-        SDL_Event e;
-        while (SDL_PollEvent(&e))
-            if (e.type == SDL_EVENT_QUIT || e.type == SDL_EVENT_TERMINATING) {
-                logx::Flush();
-                std::_Exit(0);
-            }
-        SDL_Delay(100);
-    }
+// no game: the launcher checks the folder before PLAY, so this is a folder emptied since; the game cannot start
+void NoGame() {
+    std::string where;
+    for (const fs::path& dir : AssetFolders()) where += (where.empty() ? "" : ", ") + dir.string();
+    LOGE("game: no game files in %s", where.c_str());
+    std::string text = Utf8(kGame.missing) + "\n\n" + where;
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, Utf8(kGame.short_title).c_str(), text.c_str(), nullptr);
 }
 
 bool AskOtherRelease(const fs::path& name) {
@@ -256,11 +182,9 @@ int Search(GameFiles& game) {
 }  // namespace
 
 bool FindGame(GameFiles& game) {
-    for (;;) {
-        int found = Search(game);
-        if (found) return found > 0;
-        WaitForGame();
-    }
+    int found = Search(game);
+    if (!found) NoGame();
+    return found > 0;
 }
 
 }  // namespace app

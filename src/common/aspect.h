@@ -35,8 +35,10 @@ inline float ScreenAspect() {
     return aspect;
 }
 
-// the output's shape: the frame is shown that wide, letterboxed on the screen when it is not the screen's
+// the output's shape: the frame is shown that wide, letterboxed on the screen when it is not the screen's; the
+// launcher's widescreen off is the console's 4:3
 inline float Aspect() {
+    if (!Opt().widescreen) return 4.0f / 3.0f;
     uint32_t code = Opt().aspect_ratio;
     for (const AspectChoice& a : kAspects)
         if (a.code == code && a.ratio > 0) return a.ratio;

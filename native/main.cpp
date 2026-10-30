@@ -1,5 +1,6 @@
-// The Android host: SDL's window and event loop, the settings and folders, the app's lifecycle; the game is described
-// by app::kGame (src/common/game_info.cpp)
+// The Android host: SDL's window and event loop, the settings the launcher wrote and the folders, the app's lifecycle;
+// the game is described by app::kGame (src/common/game_info.cpp). The activity is the launcher shell's GameActivity
+// (an SDL3 SDLActivity): its Java overlay draws the touch controls and hands their pad over (native/activity.cpp)
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <android/log.h>
@@ -62,7 +63,7 @@ void LogToLogcat() {
         for (ssize_t n; (n = read(fd, buf, sizeof(buf))) > 0;) {
             line.append(buf, size_t(n));
             for (size_t nl; (nl = line.find('\n')) != std::string::npos; line.erase(0, nl + 1))
-                __android_log_write(ANDROID_LOG_INFO, "BLACK", line.substr(0, nl).c_str());
+                __android_log_write(ANDROID_LOG_INFO, "MostWanted", line.substr(0, nl).c_str());
         }
     }).detach();
 }
@@ -104,11 +105,17 @@ float RefreshRate() {
 
 }  // namespace
 
+namespace app {
+const std::string& GameDirSetting();
+}
+
 namespace host {
 
 SDL_Window* Window() { return g_window; }
 bool Foreground() { return g_foreground; }
 uint32_t SurfaceEpoch() { return g_surface_epoch; }
+
+std::filesystem::path LauncherGameDir() { return app::GameDirSetting(); }
 
 void WaitForeground() {
     std::unique_lock lock(g_foreground_lock);
@@ -128,8 +135,10 @@ namespace {
 
 const char* kModes[] = {"fullscreen", "borderless", "windowed"};
 // the defaults a settings file was written under: 3 has the frame rate capped at 60 and vsync off, which a file from
-// before takes once, its player's own choices kept from then on
+// before takes once, its player's own choices kept from then on. The launcher writes 3
 constexpr int kDefaults = 3;
+// the game folder the launcher picked (Settings.gameDir), its key game_dir in the settings file
+std::string g_game_dir;
 
 std::filesystem::path File() { return ExeDir() / kGame.settings; }
 
@@ -143,6 +152,7 @@ toml::table Table() {
                   {"vsync", s.vsync},
                   {"anisotropic_filtering", int64_t(s.aniso)},
                   {"join_ip", s.join_ip},
+                  {"game_dir", g_game_dir},
                   {"defaults", int64_t(kDefaults)}};
     for (const Option& o : kGame.options) {
         if (o.flag) t.insert(o.key, *o.flag);
@@ -194,6 +204,7 @@ void Load() {
     s.vsync = t["vsync"].value_or(s.vsync);
     s.aniso = t["anisotropic_filtering"].value_or(s.aniso);
     s.join_ip = t["join_ip"].value_or(s.join_ip);
+    g_game_dir = t["game_dir"].value_or(std::string());
     if (t["defaults"].value_or(int64_t(0)) < kDefaults) PhoneFrameDefaults(s);
     for (const Option& o : kGame.options) {
         if (o.flag) *o.flag = t[o.key].value_or(*o.flag);
@@ -201,6 +212,8 @@ void Load() {
     }
     if (kGame.load) kGame.load(&t);
 }
+
+const std::string& GameDirSetting() { return g_game_dir; }
 
 void Save() {
     std::ofstream f(File());
@@ -299,26 +312,11 @@ void InitUi() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_IsTouchScreen;
     io.BackendPlatformName = "android_sdl3";
-    touch::LoadArt();
 }
 
-// The logs go in the MostWanted folder beside the game, where the player finds them without Android/data (which
-// Android 11 on hides from file managers); without all files access yet (the first run asks for it), in the app's own
-// folder as before
-std::filesystem::path LogDir() {
-    std::filesystem::path shared = std::filesystem::path(host::kShared) / "logs";
-    std::error_code ec;
-    std::filesystem::create_directories(shared, ec);
-    std::filesystem::path probe = shared / ".write";
-    if (std::FILE* f = std::fopen(probe.c_str(), "w")) {
-        std::fclose(f);
-        std::filesystem::remove(probe, ec);
-        return shared;
-    }
-    return app::ExeDir() / "logs";
-}
+// the logs in the app's folder (Android/data/<package>/files/logs), beside the settings the launcher wrote
+std::filesystem::path LogDir() { return app::ExeDir() / "logs"; }
 
 void Dispatch(const SDL_Event& e) {
     switch (e.type) {
@@ -336,10 +334,6 @@ void Dispatch(const SDL_Event& e) {
         case SDL_EVENT_LOW_MEMORY:
             LOGW("app: Android is low on memory");
             break;
-        case SDL_EVENT_SENSOR_UPDATE:
-        case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
-            gyro::OnEvent(e);
-            return;
         case SDL_EVENT_GAMEPAD_ADDED:
         case SDL_EVENT_GAMEPAD_REMOVED:
             input::OnPadEvent(e);
@@ -347,9 +341,7 @@ void Dispatch(const SDL_Event& e) {
         default:
             break;
     }
-    if (touch::OnEvent(e)) return;
-    std::lock_guard lock(app::UiLock());
-    ui::OnEvent(e);
+    touch::OnEvent(e);
 }
 
 }  // namespace
@@ -363,8 +355,8 @@ int main(int, char**) {
     // no poll sentinel: on Android each pump inside SDL_WaitEventTimeout pushes a new one, which wakes the wait at once,
     // and the event loop spun a whole core until the timeout (SDL 3.4)
     SDL_SetHint(SDL_HINT_POLL_SENTINEL, "0");
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO | SDL_INIT_SENSOR)) {
-        __android_log_print(ANDROID_LOG_ERROR, "BLACK", "SDL_Init: %s", SDL_GetError());
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
+        __android_log_print(ANDROID_LOG_ERROR, "MostWanted", "SDL_Init: %s", SDL_GetError());
         return 1;
     }
     // a file named perf in the app's folder: the perf log lines, as XBE_PERF gives them on a PC
@@ -405,6 +397,5 @@ int main(int, char**) {
             Dispatch(e);
             while (SDL_PollEvent(&e)) Dispatch(e);
         }
-        touch::Pump();
     }
 }

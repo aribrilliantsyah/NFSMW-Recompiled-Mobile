@@ -1,22 +1,24 @@
+#include <algorithm>
+
 #include <toml++/toml.hpp>
 
 #include "app/app.h"
 #include "audio/output.h"
 #include "common/menu.h"
+#include "common/hud_layout.h"
 #include "common/mouse_keyboard.h"
 #include "common/options.h"
-#include "common/pad_binds.h"
 
 namespace game {
 
 namespace {
 
-// port 0 has the touch controls, the keyboard and mouse; the game sees no input while the panel is open
+// port 0 has the touch overlay, the keyboard and mouse
 void Pad(int port, input::Pad& pad) {
     input::SeenPad(pad);
-    if (port == 0) pad.connected = true;
-    if (app::MenuOpen()) pad = input::Pad{.connected = pad.connected};
-    else if (port == 0) input::Keyboard(pad);
+    if (port != 0) return;
+    pad.connected = true;
+    input::Keyboard(pad);
 }
 
 // no vibration while the keyboard and mouse are in use
@@ -36,16 +38,32 @@ void Load(const void* table) {
     if (const toml::table* keys = t["keys"].as_table())
         for (auto&& [id, value] : *keys)
             if (auto v = value.value<std::string>()) o.keys[std::string(id.str())] = *v;
-    if (const toml::table* pad = t["pad"].as_table())
-        for (auto&& [id, value] : *pad)
-            if (auto v = value.value<std::string>()) o.pad[std::string(id.str())] = *v;
+    input::LoadPadMap(&t);
+}
+
+// layout.toml's [hud], the launcher's HUD layout editor's: each item's offset from where the game puts it, FEng units,
+// kept inside FEng's widest screen
+void LoadHudLayout() {
+    toml::table t;
+    try {
+        t = toml::parse_file((app::ExeDir() / "layout.toml").string());
+    } catch (...) {
+        return;
+    }
+    constexpr const char* kIds[kHudItems] = {"speedometer", "minimap", "race_info", "ea_trax"};
+    for (size_t i = 0; i < kHudItems; i++) {
+        const toml::table* p = t["hud"][kIds[i]].as_table();
+        if (!p) continue;
+        g_hud_x[i] = std::clamp(float((*p)["x"].value_or(0.0)), -600.0f, 600.0f);
+        g_hud_y[i] = std::clamp(float((*p)["y"].value_or(0.0)), -240.0f, 240.0f);
+    }
 }
 
 // after the settings load, before boot
 void Init() {
     BootLanguage();  // latched before the options can change the setting
     input::LoadBindings();
-    input::LoadPadBindings();
+    LoadHudLayout();
     audio::SetOutputMode(Opt().audio_output);
 }
 
@@ -56,9 +74,6 @@ void Save(void* table) {
     toml::table keys;
     for (const auto& [id, value] : o.keys) keys.insert(id, value);
     t.insert("keys", keys);
-    toml::table pad;
-    for (const auto& [id, value] : o.pad) pad.insert(id, value);
-    t.insert("pad", pad);
 }
 
 }  // namespace
@@ -82,10 +97,11 @@ const app::GameInfo app::kGame = {
     .log = "mostwanted",
     .settings = "mostwanted.toml",
     .splash = nullptr,
-    .missing = L"Put the game in the MostWanted folder on the phone's storage: its disc image (.iso), or default.xbe "
-               L"with the disc's NFS folder beside it.",
+    .missing = L"Install the game from the launcher (INSTALL FROM ISO), or pick the folder with default.xbe and the "
+               L"disc's NFS folder.",
     .images = {{"default.xbe", "MostWanted"}},
     .options = {{"fps_counter", &game::Opt().fps_counter, nullptr},
+                {"widescreen", &game::Opt().widescreen, nullptr},
                 {"bloom", &game::Opt().bloom, nullptr},
                 {"fog", &game::Opt().fog, nullptr},
                 {"car_reflections", nullptr, &game::Opt().reflections},
