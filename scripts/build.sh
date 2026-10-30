@@ -90,9 +90,11 @@ echo "      $LIBS: $(ls "$LIBS" | tr '\n' ' ')"
 say 5/5 "APK ($VARIANT)"
 [ -f local.properties ] || echo "sdk.dir=$ANDROID_HOME" > local.properties
 task=assemble${VARIANT^}
+apk="app/build/outputs/apk/$VARIANT/app-$VARIANT.apk"
+# packaged afresh: Gradle's incremental packaging appends a changed libmain.so to the old APK, which then doubles
+rm -f "$apk"
 # shellcheck disable=SC2086
 ./gradlew --no-daemon "$task" -PnativeLibs="$(dirname "$LIBS")" ${GRADLE_ARGS:-}
-apk="app/build/outputs/apk/$VARIANT/app-$VARIANT.apk"
 [ -f "$apk" ] || die "no $apk"
 echo
 echo "  $apk ($(du -h "$apk" | cut -f1))"

@@ -154,6 +154,20 @@ public final class TouchControllerView extends View {
     /** The in-game menu (hamburger): set by GameActivity. */
     Runnable onMenu;
 
+    // The game's own menus (native/touch.cpp): touches off the controls reach SDLSurface and are FEng's pointer,
+    // swipes and the keyboard's keys. A menu prompting the triggers (the showcase's and the world map's zoom) gets
+    // ZOOM OUT / ZOOM IN pills, as Rangga's overlay drew them, pressing LT / RT.
+    private static final long MENU_POLL_MS = 250;
+    private final String[] zoomLabel = {"", ""};      // LT, RT; empty: not prompted
+    private final RectF[] zoomBtn = {new RectF(), new RectF()};
+    private final int[] zoomPointer = {-1, -1};
+    private final Runnable menuPoll = new Runnable() {
+        @Override public void run() {
+            pollMenu();
+            postDelayed(this, MENU_POLL_MS);
+        }
+    };
+
     // editor
     private final boolean inGame;
     private final Runnable onEditorDone;     // EditorActivity: finish()
@@ -262,6 +276,7 @@ public final class TouchControllerView extends View {
             if (inputManager != null) inputManager.registerInputDeviceListener(padListener, getHandler());
             checkPads();
             showToggle();
+            post(menuPoll);
         }
         updateTilt();
     }
@@ -270,6 +285,7 @@ public final class TouchControllerView extends View {
     protected void onDetachedFromWindow() {
         if (inputManager != null) inputManager.unregisterInputDeviceListener(padListener);
         removeCallbacks(hideToggle);
+        removeCallbacks(menuPoll);
         stopTilt();
         super.onDetachedFromWindow();
     }
@@ -464,6 +480,9 @@ public final class TouchControllerView extends View {
             uiButton(canvas, modeBtn, MODE_NAMES[mode], dp(11));
             uiButton(canvas, menuBtn, "\u2630", dp(15));
         }
+        if (controlsVisible && !physicalPad)
+            for (int i = 0; i < 2; i++)
+                if (!zoomLabel[i].isEmpty()) zoomPill(canvas, i);
     }
 
     /** Steering-mode controls that the chosen steering does not use. */
@@ -616,6 +635,41 @@ public final class TouchControllerView extends View {
         canvas.drawText(s, x, y - (fm.ascent + fm.descent) * .5f, text);
     }
 
+    /** The menu's ZOOM OUT (LT) or ZOOM IN (RT) pill, low on the left as Rangga's overlay put them. */
+    private void zoomPill(Canvas canvas, int i) {
+        boolean on = zoomPointer[i] >= 0;
+        fill.setColor(on ? PRESSED : UI_BG);
+        canvas.drawRoundRect(zoomBtn[i], zoomBtn[i].height() / 2, zoomBtn[i].height() / 2, fill);
+        stroke.setColor(ACCENT);
+        canvas.drawRoundRect(zoomBtn[i], zoomBtn[i].height() / 2, zoomBtn[i].height() / 2, stroke);
+        text.setTextSize(zoomBtn[i].height() * .4f);
+        text.getFontMetrics(fm);
+        canvas.drawText(zoomLabel[i], zoomBtn[i].centerX(), zoomBtn[i].centerY() - (fm.ascent + fm.descent) * .5f, text);
+    }
+
+    /** The game's menu prompts, from native: the zoom pills come and go with the menu's L1 / R1 prompts. */
+    private void pollMenu() {
+        String[] p;
+        try { p = GameActivity.nativeMenuPills(); } catch (UnsatisfiedLinkError e) { return; }
+        boolean changed = false;
+        for (int i = 0; i < 2; i++) {
+            String l = p == null ? "" : p[i];
+            if (l.equals(zoomLabel[i])) continue;
+            zoomLabel[i] = l;
+            changed = true;
+            if (l.isEmpty() && zoomPointer[i] >= 0) zoomPointer[i] = -1;
+            if (!l.isEmpty()) {
+                // RT (ZOOM IN) on top, as kFeFaces had it: left edge 3% in, middles at 40% and 50% of the height
+                float h = height * .08f;
+                text.setTextSize(h * .4f);
+                float w = Math.max(h * 2.1f * 2, text.measureText(l) + h * 1.4f);
+                float cy = height * (i == 1 ? .40f : .50f), left = width * .03f;
+                zoomBtn[i].set(left, cy - h / 2, left + w, cy + h / 2);
+            }
+        }
+        if (changed) { send(); invalidate(); }
+    }
+
     // ------------------------------------------------------------------ touch
 
     @Override
@@ -643,6 +697,14 @@ public final class TouchControllerView extends View {
                 return true;
             }
             if (!controlsVisible) return false;
+            for (int i = 0; i < 2; i++) {
+                if (zoomLabel[i].isEmpty() || zoomPointer[i] >= 0 || !zoomBtn[i].contains(x, y)) continue;
+                zoomPointer[i] = id;
+                if (haptic) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                send();
+                invalidate();
+                return true;
+            }
             for (int i = controls.size() - 1; i >= 0; i--) {
                 Control c = controls.get(i);
                 if (c.pointer < 0 && c.shown() && !hiddenBySteer(c) && c.contains(x, y)) {
@@ -655,6 +717,8 @@ public final class TouchControllerView extends View {
                     return true;
                 }
             }
+            // not ours: Android dispatches this pointer to the next view under it, SDLSurface, and the game's menus
+            // take it (native/touch.cpp); in a race nothing does
             return false;
         }
         if (action == MotionEvent.ACTION_MOVE) {
@@ -667,6 +731,13 @@ public final class TouchControllerView extends View {
             return any;
         }
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) {
+            for (int i = 0; i < 2; i++)
+                if (zoomPointer[i] == id) {
+                    zoomPointer[i] = -1;
+                    send();
+                    invalidate();
+                    return true;
+                }
             Control c = pointers.get(id);
             if (c == null) return false;
             release(c);
@@ -715,6 +786,7 @@ public final class TouchControllerView extends View {
     private void releaseAll() {
         for (Control c : controls) release(c);
         pointers.clear();
+        zoomPointer[0] = zoomPointer[1] = -1;
         send();
         invalidate();
     }
@@ -751,6 +823,8 @@ public final class TouchControllerView extends View {
                 }
             }
             if (tiltActive()) lx = Math.round(tilt * 32767);
+            if (zoomPointer[0] >= 0) lt = 255;
+            if (zoomPointer[1] >= 0) rt = 255;
         }
         if (buttons != lastB || face != lastF || lt != lastLt || rt != lastRt || lx != lastLx || ly != lastLy) {
             lastB = buttons; lastF = face; lastLt = lt; lastRt = rt; lastLx = lx; lastLy = ly;
