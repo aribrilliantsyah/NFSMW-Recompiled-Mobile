@@ -340,7 +340,10 @@ void Dispatch(const SDL_Event& e) {
 
 int main(int, char**) {
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
-    SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
+    // MW_MOUSE_TOUCH=1: the mouse is a finger (SDL's synthetic touches), as the phone's screen reaches the menus' taps,
+    // swipes and drags (native/touch.cpp)
+    const char* mouse_touch = std::getenv("MW_MOUSE_TOUCH");
+    SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, mouse_touch && *mouse_touch == '1' ? "1" : "0");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
@@ -351,7 +354,9 @@ int main(int, char**) {
     if (app::kGame.init) app::kGame.init();
 
     std::string title = Utf8(app::kGame.title);
-    g_window = SDL_CreateWindow(title.c_str(), EnvInt("MW_WIDTH", 640), EnvInt("MW_HEIGHT", 480), SDL_WINDOW_VULKAN);
+    // MW_FULLSCREEN=1: the whole screen, its pixels the window's (a scripted pointer then lands where it is aimed)
+    SDL_WindowFlags flags = SDL_WINDOW_VULKAN | (EnvInt("MW_FULLSCREEN", 0) ? SDL_WINDOW_FULLSCREEN : 0);
+    g_window = SDL_CreateWindow(title.c_str(), EnvInt("MW_WIDTH", 640), EnvInt("MW_HEIGHT", 480), flags);
     if (!g_window) {
         LOGE("app: no window: %s", SDL_GetError());
         return 1;

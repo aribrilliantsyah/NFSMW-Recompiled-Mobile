@@ -65,4 +65,22 @@ JNIEXPORT void JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeLooseRelease
     input::LooseRelease();
 }
 
+// TouchControllerView, a few times a second: the FEng menu's trigger prompts, for the zoom pills it draws (their
+// presses are its LT and RT). null with no menu up, else { ZOOM OUT's label, ZOOM IN's label }, empty while the
+// menu does not prompt that trigger
+JNIEXPORT jobjectArray JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeMenuPills(JNIEnv* env, jclass) {
+    touch::MenuState s = touch::CurrentMenu();
+    if (!s.menu) return nullptr;
+    jclass string = env->FindClass("java/lang/String");
+    jobjectArray out = env->NewObjectArray(2, string, nullptr);
+    const std::string* labels[] = {&s.zoom_out, &s.zoom_in};
+    for (jsize i = 0; i < 2; i++) {
+        jstring v = env->NewStringUTF(labels[i]->c_str());
+        env->SetObjectArrayElement(out, i, v);
+        env->DeleteLocalRef(v);
+    }
+    env->DeleteLocalRef(string);
+    return out;
+}
+
 }  // extern "C"

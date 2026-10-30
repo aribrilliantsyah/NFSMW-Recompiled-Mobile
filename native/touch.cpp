@@ -24,6 +24,7 @@
 #include "common/fe_mouse.h"
 #include "common/keys.h"
 #include "common/options.h"
+#include "common/translations.h"
 #include "host.h"
 
 namespace input {
@@ -402,6 +403,34 @@ void FingerUp(SDL_FingerID id) {
     }
     std::erase_if(g_fingers, [id](const Finger& f) { return f.id == id; });
 }
+
+// the triggers zoom wherever they are prompted (the showcase, the world map): a label that is no action (the map's L
+// is followed by its zoom, "ZOOM 1.5X", its R by nothing) gives way to ZOOM OUT and ZOOM IN (Rangga's FeLabel, its
+// triggers' part)
+std::string TriggerLabel(const game::FePrompts& p, int prompt) {
+    if (!p.shown[prompt]) return {};
+    auto action = [&](int i) {
+        const std::string& l = p.label[i];
+        return !l.empty() && std::none_of(l.begin(), l.end(), [](char c) { return c >= '0' && c <= '9'; });
+    };
+    if (!action(game::kFePromptLT) || !action(game::kFePromptRT))
+        return app::Ui(prompt == game::kFePromptLT ? "ZOOM OUT" : "ZOOM IN");
+    return p.label[prompt];
+}
+
+}  // namespace
+
+MenuState CurrentMenu() {
+    MenuState s;
+    if (!FeMenu()) return s;
+    game::FePrompts p = game::CurrentFePrompts();
+    s.menu = true;
+    s.zoom_out = TriggerLabel(p, game::kFePromptLT);
+    s.zoom_in = TriggerLabel(p, game::kFePromptRT);
+    return s;
+}
+
+namespace {
 
 void KeyEvent(const SDL_KeyboardEvent& k) {
     // Android's back key: the game's pause menu in a race, back out of the game's menus
