@@ -94,6 +94,20 @@ public class TomlSettingsTest {
             "foo = [1, 2\n",                          // array left open
             "note = \"\"\"never closed\n",            // multi-line string left open
             "x = \"\\q\"\n",                          // bad escape
+            "x = 01\n",                               // leading zero
+            "x = 1__0\n",                             // double underscore
+            "x = 1_\n",                               // trailing underscore
+            "x = 0x_\n",                              // hex with no digits
+            "x = 0x_1\n",                             // underscore not between digits
+            "x = 1.\n",                               // float with no fraction
+            "x = 1e\n",                               // float with no exponent
+            "x = 2026-13-01\n",                       // no 13th month
+            "x = 9223372036854775808\n",              // beyond a 64-bit integer
+            "fps _cap = 60\n",                        // blank inside a bare key
+            "keys.up = \"W\"\n[keys]\nup = \"S\"\n",  // the same path by dotted key and by header
+            "[keys]\nup = \"W\"\n[keys.up]\n",        // a value reopened as a table
+            "[a]\n[a.b]\n[a]\n",                      // a table twice, sub-table between
+            "a.b = 1\na.b.c = 2\n",                   // a value used as a table
         };
         for (String b : bad) {
             File f = tmp.newFile();
@@ -101,6 +115,44 @@ public class TomlSettingsTest {
             assertTrue(b, TomlSettings.load(f).recovered());
             assertTrue(b, new File(f.getParentFile(), f.getName() + ".bad").exists());
         }
+    }
+
+    @Test
+    public void validEdgesAreKept() throws Exception {
+        String[] good = {
+            "[[items]]\n[items.meta]\nx = 1\n[[items]]\n[items.meta]\nx = 2\n",  // one sub-table per element
+            "x = 0\ny = -0\nz = 1_000\nh = 0xDEAD_beef\no = 0o17\nb = 0b1010\n",
+            "f = 1.5\ng = -0.0\nh = 1e10\ni = 6.02e+23\nj = inf\nk = -nan\nl = 1_0.0_1\n",
+            "d = 1979-05-27\nt = 07:32:00\ndt = 1979-05-27T07:32:00.999-07:00\nsp = 1979-05-27 07:32:00Z\n",
+            "x = 9223372036854775807\ny = -9223372036854775808\n",
+            "a.b = 1\na.c = 2\n[x]\ny.z = 1\n",
+            "\"quoted key\" = 1\n'lit' = 2\nsite.\"google.com\" = true\n",
+            "[a.b]\n[a]\nx = 1\n",                     // a parent opened after its sub-table
+        };
+        for (String g : good) {
+            File f = tmp.newFile();
+            Files.write(f.toPath(), g.getBytes(StandardCharsets.UTF_8));
+            TomlSettings t = TomlSettings.load(f);
+            assertFalse(g, t.recovered());
+            t.save(f);
+            assertEquals(g, new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+        }
+    }
+
+    @Test
+    public void longIntsAndDottedKeys() throws Exception {
+        File f = tmp.newFile();
+        Files.write(f.toPath(), "big = 9223372036854775807\npadmap.a = \"x\"\n".getBytes(StandardCharsets.UTF_8));
+        TomlSettings t = TomlSettings.load(f);
+        assertEquals(Long.MAX_VALUE, t.getInt("big", 0));
+        // a dotted key at the top is the same entry as padmap.a; a new padmap key joins it as a dotted key
+        assertEquals("x", t.getString("padmap.a", ""));
+        t.put("padmap.a", "y");
+        t.put("padmap.b", "z");
+        t.save(f);
+        assertEquals("big = 9223372036854775807\npadmap.a = \"y\"\npadmap.b = \"z\"\n",
+                     new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+        assertFalse(TomlSettings.load(f).recovered());
     }
 
     @Test

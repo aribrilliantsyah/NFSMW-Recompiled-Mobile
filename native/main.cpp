@@ -236,7 +236,10 @@ static void Merge(toml::table& into, const toml::table& from) {
 void Save() {
     toml::table t;
     std::error_code ec;
-    if (std::filesystem::exists(File(), ec)) {
+    // a file we cannot even look at may still be there: not a missing file to write fresh
+    bool exists = std::filesystem::exists(File(), ec);
+    if (ec) return;
+    if (exists) {
         try {
             t = toml::parse_file(File().string());
         } catch (const toml::parse_error&) {

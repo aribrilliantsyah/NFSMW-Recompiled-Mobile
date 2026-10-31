@@ -15,19 +15,24 @@ import java.util.List;
  * bools, integers or strings; every other entry (comments, unknown tables,
  * arrays, inline tables, multi-line strings, floats, dates) is kept verbatim,
  * so what the native side writes (native/main.cpp app::Save) survives the
- * launcher's edits and back. What toml++ would turn down is turned down here
- * too, so both sides agree on a broken file.
+ * launcher's edits and back. Checked: keys (bare or quoted, dotted), table and
+ * array-of-tables headers, a key or table defined twice (by its full path),
+ * strings and escapes, integers, floats, bools, dates and times, junk after a
+ * value. Inside an array or inline table only the brackets and strings are
+ * checked, not the values.
  */
 final class TomlSettings {
-    /** One line of the file; key null for a comment, a blank or a table header. */
+    /** One line (or one entry over lines) of the file; key null for a comment, a blank or a table header. */
     private static final class Line {
         String text;
         final String table, key;
-        Object value;     // Boolean, Long, String, or null for a value of another type
-        Line(String text, String table, String key, Object value) {
+        final String lead;  // the entry's text up to its value ("  key = "), kept when the value is replaced
+        Object value;       // Boolean, Long, String, or null for a value of another type
+        Line(String text, String table, String key, String lead, Object value) {
             this.text = text;
             this.table = table;
             this.key = key;
+            this.lead = lead;
             this.value = value;
         }
     }
@@ -83,16 +88,23 @@ final class TomlSettings {
         Object value = v instanceof Number ? (Object) ((Number) v).longValue() : v;
         if (!(value instanceof Boolean || value instanceof Long || value instanceof String))
             throw new IllegalArgumentException("not a bool, integer or string: " + key);
-        int dot = key.indexOf('.');
-        String table = dot < 0 ? "" : key.substring(0, dot), name = dot < 0 ? key : key.substring(dot + 1);
-        String text = name + " = " + format(value);
         Line l = find(key);
         if (l != null) {
-            l.text = text;
+            l.text = l.lead + format(value);
             l.value = value;
             return;
         }
-        lines.add(insertAt(table), new Line(text, table, name, value));
+        int dot = key.indexOf('.');
+        String table = dot < 0 ? "" : key.substring(0, dot), name = dot < 0 ? key : key.substring(dot + 1);
+        // a table the file makes with dotted keys at the top ("padmap.a = ..."), not with a header: one more such key
+        for (Line o : lines)
+            if (!table.isEmpty() && o.key != null && o.table.isEmpty() && o.key.startsWith(table + ".")) {
+                table = "";
+                name = key;
+                break;
+            }
+        String lead = name + " = ";
+        lines.add(insertAt(table), new Line(lead + format(value), table, name, lead, value));
     }
 
     /** Drops every line that is exactly text (an old comment). */
@@ -113,11 +125,10 @@ final class TomlSettings {
 
     // ------------------------------------------------------------------ inside
 
+    /** key is the entry's full path: "bloom", "padmap.a" (in [padmap], or a dotted key padmap.a at the top). */
     private Line find(String key) {
-        int dot = key.indexOf('.');
-        String table = dot < 0 ? "" : key.substring(0, dot), name = dot < 0 ? key : key.substring(dot + 1);
         for (Line l : lines)
-            if (l.key != null && l.table.equals(table) && l.key.equals(name)) return l;
+            if (l.key != null && (l.table.isEmpty() ? l.key : l.table + "." + l.key).equals(key)) return l;
         return null;
     }
 
@@ -137,8 +148,8 @@ final class TomlSettings {
         }
         if (header < 0) {
             if (!lines.isEmpty() && !lines.get(lines.size() - 1).text.trim().isEmpty())
-                lines.add(new Line("", "", null, null));
-            lines.add(new Line("[" + table + "]", table, null, null));
+                lines.add(new Line("", "", null, null, null));
+            lines.add(new Line("[" + table + "]", table, null, null, null));
             return lines.size();
         }
         int at = header + 1;
@@ -151,76 +162,136 @@ final class TomlSettings {
         return text.trim().startsWith("[");
     }
 
-    /** Builds the lines, an entry whose value spans lines (an array, a multi-line string) as one. Strict enough to
-     *  turn down what toml++ (native app::Load) would: a duplicate key or table, a string left open, junk after a
-     *  value, a bare value that is no bool, number or date. */
+    /** Builds the lines, an entry whose value spans lines (an array, a multi-line string) as one, and turns down a
+     *  file outside the subset the class comment names. */
     private void parse(String s) {
-        java.util.Set<String> seen = new java.util.HashSet<>();
-        String table = "";
-        int arrays = 0;
+        // every path defined so far, its segments joined by '\0', an array of tables' elements told apart by
+        // "#<n>" after its segment: what it is (a table by header 'h', by dotted key 'd' or as a header's parent
+        // 'p', a value 'v', an array of tables 'a')
+        java.util.Map<String, Character> defined = new java.util.HashMap<>();
+        java.util.Map<String, Integer> elements = new java.util.HashMap<>();   // an array of tables: its elements
+        String scope = "";          // the current table's resolved path
+        String table = "";          // its name as find() matches it; "[[..." when under an array of tables
         int p = 0, n = s.length();
         while (p < n) {
             int eol = eol(s, p);
             String raw = s.substring(p, eol);
             String t = raw.trim();
             if (t.isEmpty() || t.startsWith("#")) {
-                lines.add(new Line(stripCr(raw), table, null, null));
+                lines.add(new Line(stripCr(raw), table, null, null, null));
                 p = next(s, eol);
                 continue;
             }
             if (t.startsWith("[")) {
-                boolean array = t.startsWith("[[");
-                int end = t.indexOf(array ? "]]" : "]");
-                if (end < 0) throw new IllegalArgumentException("unclosed table header: " + raw);
-                String name = t.substring(array ? 2 : 1, end).trim();
-                String after = t.substring(end + (array ? 2 : 1)).trim();
-                if (name.isEmpty() || !(after.isEmpty() || after.startsWith("#")))
-                    throw new IllegalArgumentException("bad table header: " + raw);
+                int q = p;
+                while (s.charAt(q) == ' ' || s.charAt(q) == '\t') q++;
+                boolean array = s.startsWith("[[", q);
+                List<String> name = new ArrayList<>();
+                q = key(s, q + (array ? 2 : 1), eol, name);
+                if (!s.startsWith(array ? "]]" : "]", q)) throw new IllegalArgumentException("bad table header: " + raw);
+                q += array ? 2 : 1;
+                String rest = s.substring(q, eol).trim();
+                if (!(rest.isEmpty() || rest.startsWith("#"))) throw new IllegalArgumentException("bad table header: " + raw);
+                // the parents: tables (made here if new), an array of tables standing for its last element
+                String path = "";
+                for (int i = 0; i < name.size() - 1; i++) path = step(defined, elements, path, name.get(i), 'p', raw);
+                String last = name.get(name.size() - 1);
+                String full = path.isEmpty() ? last : path + "\u0000" + last;
+                Character was = defined.get(full);
                 if (array) {
-                    // keys under an array of tables are not addressable: "[[" cannot be a table name put() makes
-                    table = "[[" + name + "#" + arrays++;
+                    if (was != null && was != 'a') throw new IllegalArgumentException("not an array of tables: " + raw);
+                    defined.put(full, 'a');
+                    int k = elements.merge(full, 1, Integer::sum) - 1;
+                    scope = full + "#" + k;
                 } else {
-                    if (!seen.add("[" + name)) throw new IllegalArgumentException("table twice: " + raw);
-                    table = name;
+                    // a table only its sub-tables' headers made may be opened once; any other is defined twice
+                    if (was != null && was != 'p') throw new IllegalArgumentException("table twice: " + raw);
+                    defined.put(full, 'h');
+                    scope = full;
                 }
-                lines.add(new Line(stripCr(raw), table, null, null));
+                table = scope.contains("#") ? "[[" + scope : String.join(".", name);
+                lines.add(new Line(stripCr(raw), table, null, null, null));
                 p = next(s, eol);
                 continue;
             }
             // key = value, the value maybe running over lines
-            int q = p;
-            while (s.charAt(q) == ' ' || s.charAt(q) == '\t') q++;
-            String key;
-            char c = s.charAt(q);
-            if (c == '"' || c == '\'') {
-                int close = s.indexOf(c, q + 1);
-                if (close < 0 || close > eol) throw new IllegalArgumentException("unclosed key: " + raw);
-                key = s.substring(q + 1, close);
-                q = close + 1;
-            } else {
-                int k = q;
-                while (k < eol && s.charAt(k) != '=') k++;
-                key = s.substring(q, k).trim().replaceAll("\\s", "");
-                if (!key.matches("[A-Za-z0-9_-]+(\\s*\\.\\s*[A-Za-z0-9_-]+)*"))
-                    throw new IllegalArgumentException("bad key: " + raw);
-                q = k;
-            }
-            while (q < eol && (s.charAt(q) == ' ' || s.charAt(q) == '\t')) q++;
+            List<String> name = new ArrayList<>();
+            int q = key(s, p, eol, name);
             if (q >= eol || s.charAt(q) != '=') throw new IllegalArgumentException("no key = value: " + raw);
             q++;
             while (q < eol && (s.charAt(q) == ' ' || s.charAt(q) == '\t')) q++;
             if (q >= eol) throw new IllegalArgumentException("no value: " + raw);
+            String path = scope;
+            for (int i = 0; i < name.size() - 1; i++) path = step(defined, elements, path, name.get(i), 'd', raw);
+            String last = name.get(name.size() - 1);
+            String full = path.isEmpty() ? last : path + "\u0000" + last;
+            if (defined.containsKey(full)) throw new IllegalArgumentException("defined twice: " + raw);
+            defined.put(full, 'v');
             Object[] value = new Object[1];
             int end = value(s, q, value);
             // after the value: blanks, a comment, the line's end
             while (end < n && (s.charAt(end) == ' ' || s.charAt(end) == '\t')) end++;
-            int last = eol(s, end);
-            String rest = s.substring(end, last).trim();
+            int lineEnd = eol(s, end);
+            String rest = s.substring(end, lineEnd).trim();
             if (!rest.isEmpty() && !rest.startsWith("#")) throw new IllegalArgumentException("junk after the value: " + raw);
-            if (!seen.add(table + "\u0000" + key)) throw new IllegalArgumentException("key twice: " + raw);
-            lines.add(new Line(stripCr(s.substring(p, last)), table, key, value[0]));
-            p = next(s, last);
+            lines.add(new Line(stripCr(s.substring(p, lineEnd)), table, String.join(".", name), s.substring(p, q),
+                               value[0]));
+            p = next(s, lineEnd);
         }
+    }
+
+    /** Into the table seg under path: made if new (as kind 'p', a header's parent, or 'd', by a dotted key); an
+     *  array of tables leads to its last element. A value there, or a header's table reopened by a dotted key, is
+     *  an error. */
+    private static String step(java.util.Map<String, Character> defined, java.util.Map<String, Integer> elements,
+                               String path, String seg, char kind, String raw) {
+        String full = path.isEmpty() ? seg : path + "\u0000" + seg;
+        Character was = defined.get(full);
+        if (was == null) {
+            defined.put(full, kind);
+            return full;
+        }
+        if (was == 'v') throw new IllegalArgumentException("not a table: " + raw);
+        if (was == 'a') {
+            if (kind == 'd') throw new IllegalArgumentException("an array of tables in a dotted key: " + raw);
+            return full + "#" + (elements.get(full) - 1);
+        }
+        if (kind == 'd' && (was == 'h' || was == 'p')) throw new IllegalArgumentException("table reopened: " + raw);
+        return full;
+    }
+
+    /** A key at s[p] (blanks before it, a dotted one's segments bare or quoted) into segs; its end, past the
+     *  blanks after it. */
+    private static int key(String s, int p, int eol, List<String> segs) {
+        int q = p;
+        while (true) {
+            while (q < eol && (s.charAt(q) == ' ' || s.charAt(q) == '\t')) q++;
+            if (q >= eol) throw new IllegalArgumentException("no key at " + p);
+            char c = s.charAt(q);
+            if (c == '"') {
+                StringBuilder b = new StringBuilder();
+                q = basic(s, q, b);
+                segs.add(b.toString());
+            } else if (c == '\'') {
+                int close = s.indexOf('\'', q + 1);
+                if (close < 0 || close > eol) throw new IllegalArgumentException("unclosed key at " + q);
+                segs.add(s.substring(q + 1, close));
+                q = close + 1;
+            } else {
+                int k = q;
+                while (k < eol && isBareKeyChar(s.charAt(k))) k++;
+                if (k == q) throw new IllegalArgumentException("bad key at " + q);
+                segs.add(s.substring(q, k));
+                q = k;
+            }
+            while (q < eol && (s.charAt(q) == ' ' || s.charAt(q) == '\t')) q++;
+            if (q < eol && s.charAt(q) == '.') { q++; continue; }
+            return q;
+        }
+    }
+
+    private static boolean isBareKeyChar(char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
     }
 
     private static int eol(String s, int p) {
@@ -232,12 +303,17 @@ final class TomlSettings {
 
     private static String stripCr(String s) { return s.endsWith("\r") ? s.substring(0, s.length() - 1) : s; }
 
-    private static final java.util.regex.Pattern BARE_KEPT = java.util.regex.Pattern.compile(
-        "[+-]?(inf|nan)"                                                            // special floats
-        + "|0x[0-9A-Fa-f_]+|0o[0-7_]+|0b[01_]+"                                     // other integers
-        + "|[+-]?[0-9][0-9_]*(\\.[0-9][0-9_]*)?([eE][+-]?[0-9][0-9_]*)?"            // floats
-        + "|[0-9]{4}-[0-9]{2}-[0-9]{2}([Tt ][0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]+)?)?([Zz]|[+-][0-9]{2}:[0-9]{2})?)?"
-        + "|[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]+)?)?");                             // local time
+    // TOML's numbers: no leading zeros, an underscore only between two digits
+    private static final String DEC = "(0|[1-9](_?[0-9])*)", DIGITS = "[0-9](_?[0-9])*";
+    private static final java.util.regex.Pattern INT = java.util.regex.Pattern.compile("[+-]?" + DEC);
+    private static final java.util.regex.Pattern RADIX = java.util.regex.Pattern.compile(
+        "0x[0-9A-Fa-f](_?[0-9A-Fa-f])*|0o[0-7](_?[0-7])*|0b[01](_?[01])*");
+    private static final java.util.regex.Pattern FLOAT = java.util.regex.Pattern.compile(
+        "[+-]?(inf|nan)|[+-]?" + DEC + "(\\." + DIGITS + "([eE][+-]?" + DIGITS + ")?|[eE][+-]?" + DIGITS + ")");
+    private static final String TIME = "([01][0-9]|2[0-3]):[0-5][0-9](:([0-5][0-9]|60)(\\.[0-9]+)?)?";
+    private static final java.util.regex.Pattern DATE = java.util.regex.Pattern.compile(
+        "[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])([Tt ]" + TIME + "([Zz]|[+-]([01][0-9]|2[0-3]):[0-5][0-9])?)?"
+        + "|" + TIME);
 
     /** The value at s[p]: its end, and in out[0] a Boolean, Long or String, or null for a value kept as it is
      *  (an array, an inline table, a multi-line string, a float, a date). */
@@ -270,11 +346,22 @@ final class TomlSettings {
         }
         if (bare.equals("true")) out[0] = Boolean.TRUE;
         else if (bare.equals("false")) out[0] = Boolean.FALSE;
-        else if (bare.matches("[+-]?(0|[1-9](_?[0-9])*)")) {
-            try { out[0] = Long.parseLong(bare.replace("_", "").replace("+", "")); }
-            catch (NumberFormatException x) { throw new IllegalArgumentException("integer out of range: " + bare); }
-        } else if (!BARE_KEPT.matcher(bare).matches()) throw new IllegalArgumentException("not a value: " + bare);
+        else if (INT.matcher(bare).matches()) out[0] = integer(bare.replace("_", "").replace("+", ""), 10);
+        else if (RADIX.matcher(bare).matches()) {
+            char r = bare.charAt(1);
+            out[0] = integer(bare.substring(2).replace("_", ""), r == 'x' ? 16 : r == 'o' ? 8 : 2);
+        } else if (!FLOAT.matcher(bare).matches() && !DATE.matcher(bare).matches())
+            throw new IllegalArgumentException("not a value: " + bare);
         return e;
+    }
+
+    /** A 64-bit integer, as TOML's are; one beyond it is an error, as in toml++. */
+    private static long integer(String digits, int radix) {
+        try {
+            return Long.parseLong(digits, radix);
+        } catch (NumberFormatException x) {
+            throw new IllegalArgumentException("integer out of range: " + digits);
+        }
     }
 
     /** """...""" or '''...''', which may hold up to two more quotes before the closing three. */
