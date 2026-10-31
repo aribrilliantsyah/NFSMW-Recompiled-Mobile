@@ -20,9 +20,15 @@ void MergeLeaves(toml::table& into, const toml::table& from);
 // the leaves of now that base lacks or holds another value for (base null: all of them), as a table of their own
 toml::table ChangedLeaves(const toml::table& now, const toml::table* base);
 
-// app::Save's: the leaves of now (the run's settings) that differ from saved (as the run last read or wrote them) into
-// the file, the rest of it (the launcher's newer values too) as it is; a broken file gets all of now. saved then
-// holds what was written. True when there was nothing to write or it was written
+// app::Save's: the leaves of now (the run's settings) that differ from saved (as the run last read or wrote them), and
+// every key TouchSetting marked since the last save whatever its value, into the file, the rest of it (the launcher's
+// newer values too) as it is; a broken file gets all of now. saved then holds what was written and the marks are
+// cleared. True when there was nothing to write or it was written
 bool SaveChanged(const std::filesystem::path& file, const toml::table& now, toml::table& saved);
+
+// game thread: key (a top-level key of the settings file) set by the player in the game, a row, a preset or a
+// category's defaults: the next app::Save writes it even when its value is the one this run read, as the launcher may
+// have written another meanwhile
+void TouchSetting(const char* key);
 
 }  // namespace game

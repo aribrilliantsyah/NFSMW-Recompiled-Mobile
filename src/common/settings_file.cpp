@@ -1,6 +1,8 @@
 #include "common/settings_file.h"
 
 #include <fstream>
+#include <set>
+#include <string>
 #include <system_error>
 
 #include "common/settings_lock.h"
@@ -70,14 +72,25 @@ toml::table ChangedLeaves(const toml::table& now, const toml::table* base) {
     return out;
 }
 
+namespace {
+std::set<std::string> g_touched;  // TouchSetting's, game thread
+}
+
+void TouchSetting(const char* key) { g_touched.insert(key); }
+
 bool SaveChanged(const std::filesystem::path& file, const toml::table& now, toml::table& saved) {
     toml::table changed = ChangedLeaves(now, &saved);
+    for (const std::string& key : g_touched)
+        if (const toml::node* v = now.get(key)) changed.insert_or_assign(key, *v);
     if (changed.empty()) return true;
     bool ok = UpdateSettingsFile(file, [&](toml::table& t, bool broken) {
         MergeLeaves(t, broken ? now : changed);
         return true;
     });
-    if (ok) MergeLeaves(saved, changed);
+    if (ok) {
+        MergeLeaves(saved, changed);
+        g_touched.clear();
+    }
     return ok;
 }
 

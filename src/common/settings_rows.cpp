@@ -192,6 +192,49 @@ void ApplyPreset(Preset p) {
     o.bloom = d.bloom, o.fog = d.fog, o.motion_blur = d.motion_blur, o.reflections = d.reflections;
     o.road_reflections = d.road_reflections, o.shadows = d.shadows, o.particles = d.particles;
     o.rain = d.rain, o.rain_drops = d.rain_drops, o.anti_aliasing = d.anti_aliasing;
+    // every key the preset sets is saved, a value it shares with the run's start too (the launcher may differ)
+    for (const char* key : {"render_percent", "fps_cap", "vsync", "anisotropic_filtering", "fps_counter", "fps_position",
+                            "fps_usage", "fps_temps", "shader_preload", "bloom", "fog", "motion_blur", "car_reflections",
+                            "road_reflections", "shadows", "particles", "rain", "rain_drops", "anti_aliasing"})
+        game::TouchSetting(key);
+}
+
+// the settings file key a row sets (app::Save's Table: kGame.options, app::Settings, language), null for none of ours
+const char* RowKey(int id) {
+    switch (id) {
+        case kWidescreen: return "widescreen";
+        case kAspectRatio: return "aspect_ratio";
+        case kRenderRes: return "render_percent";
+        case kScreenFilter: return "screen_filter";
+        case kYellowFilter: return "yellow_tint";
+        case kFpsCap: return "fps_cap";
+        case kVSync: return "vsync";
+        case kFpsCounter: return "fps_counter";
+        case kCounterPos: return "fps_position";
+        case kCpuGpu: return "fps_usage";
+        case kTemps: return "fps_temps";
+        case kShaderPreload: return "shader_preload";
+        case kBloom: return "bloom";
+        case kFog: return "fog";
+        case kMotionBlur: return "motion_blur";
+        case kCarReflections: return "car_reflections";
+        case kRoadReflections: return "road_reflections";
+        case kShadows: return "shadows";
+        case kParticles: return "particles";
+        case kFallingRain: return "rain";
+        case kScreenRaindrops: return "rain_drops";
+        case kAntiAliasing: return "anti_aliasing";
+        case kAnisotropic: return "anisotropic_filtering";
+        case kLanguage: return "language";
+        case kAudioOutput: return "audio_output";
+        case kSkipMovies: return "skip_movies";
+        case kCheatNos: return "cheat_nos";
+        case kCheatSpeedbreaker: return "cheat_speedbreaker";
+        case kCheatNoPolice: return "cheat_no_police";
+        case kCheatUnlockAll: return "cheat_unlock_all";
+        case kCheatMaxCash: return "cheat_cash";
+        default: return nullptr;
+    }
 }
 
 // ---- per-category row lists (built once) ----
@@ -365,7 +408,11 @@ std::string Value(const Row& r, int step) {
     game::Options& o = game::Opt();
     app::Settings& s = app::Get();
 
-    auto save = [&] { app::Save(); };
+    // a step's key is saved whatever its value (a toggle back to the run's start is still the player's)
+    auto save = [&] {
+        if (const char* key = RowKey(r.id)) game::TouchSetting(key);
+        app::Save();
+    };
 
     auto toggle = [&](bool& flag) -> std::string {
         if (step) { flag = !flag; save(); }
@@ -560,6 +607,9 @@ void Defaults(Category cat) {
         default:
             return;  // CONTROLS are the overlay's (its editor's RESET), CHEATS their own
     }
+    // every row the defaults set is saved (SYSTEM: skip movies alone, language and audio keep theirs)
+    for (const Row& r : Rows(cat))
+        if (const char* key = RowKey(r.id); key && (cat != kSystem || r.id == kSkipMovies)) game::TouchSetting(key);
     app::Save();
 }
 
