@@ -190,10 +190,13 @@ public class TomlSettingsTest {
 
     @Test
     public void outOfRangeIntsFallBack() {
-        int[] modes = {Settings.MODE_FULL, Settings.MODE_STEERING};
-        assertEquals(Settings.MODE_STEERING, Settings.oneOf(2, modes, Settings.MODE_STEERING));
-        assertEquals(Settings.MODE_STEERING, Settings.oneOf(-1, modes, Settings.MODE_STEERING));
-        assertEquals(Settings.MODE_FULL, Settings.oneOf(0, modes, Settings.MODE_STEERING));
+        int[] modes = {Settings.MODE_XBOX, Settings.MODE_MOBILE};
+        assertEquals(Settings.MODE_MOBILE, Settings.oneOf(2, modes, Settings.MODE_MOBILE));
+        assertEquals(Settings.MODE_MOBILE, Settings.oneOf(-1, modes, Settings.MODE_MOBILE));
+        assertEquals(Settings.MODE_XBOX, Settings.oneOf(0, modes, Settings.MODE_MOBILE));
+        int[] steers = {Settings.STEER_STICK, Settings.STEER_ARROWS, Settings.STEER_TILT, Settings.STEER_WHEEL};
+        assertEquals(Settings.STEER_WHEEL, Settings.oneOf(3, steers, Settings.STEER_STICK));
+        assertEquals(Settings.STEER_STICK, Settings.oneOf(4, steers, Settings.STEER_STICK));
         assertEquals(5, Settings.within(11, 1, 10, 5));
         assertEquals(5, Settings.within(0, 1, 10, 5));
         assertEquals(10, Settings.within(10, 1, 10, 5));

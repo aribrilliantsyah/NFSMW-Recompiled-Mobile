@@ -549,7 +549,7 @@ final class ButtonArt {
 
     /**
      * A round button: the ring, its icon and its badge. With no icon the badge is the label instead, in the
-     * middle (the pad letters of the FULL layout).
+     * middle (the pad letters of the XBOX layout).
      */
     static void drawRound(Canvas c, float cx, float cy, float r, int color, Icon icon, String badge,
                           boolean pressed, float opacity) {
@@ -566,6 +566,14 @@ final class ButtonArt {
         } else if (badge != null && !badge.trim().isEmpty()) {
             text(c, badge, cx, cy + d * .04f, d * .36f, opacity);
         }
+    }
+
+    /** A round button with a letter in the middle and a badge on its top edge (a menu prompt no icon fits). */
+    static void drawRoundLetter(Canvas c, float cx, float cy, float r, int color, String letter, String badge,
+                                boolean pressed, float opacity) {
+        drawRound(c, cx, cy, r, color, null, letter, pressed, opacity);
+        float d = 2 * r;
+        badge(c, cx, cy - r + d * .03f, d * .17f, color, badge, opacity);
     }
 
     /** Builds the mockup's roundPoly: straight sides, each corner a quadratic of up to r along both sides. */

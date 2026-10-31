@@ -461,12 +461,12 @@ public class LauncherActivity extends Activity {
         c.addView(ui.secondary("Edit HUD position", v -> startActivity(new Intent(this, HudEditorActivity.class))));
         c.addView(ui.toggle("On-screen controller", null, mPrefs.getBoolean(Settings.K_PAD, true),
                 v -> pref(Settings.K_PAD, v)));
-        c.addView(ui.segmented("Layout", "Full: the original Xbox controller. Drive: steering, pedals, nitrous, e-brake, Speedbreaker.",
-                new String[] {"Full controller", "Drive"}, new int[] {Settings.MODE_FULL, Settings.MODE_STEERING},
-                num(Settings.K_PAD_MODE, Settings.MODE_STEERING), v -> put(Settings.K_PAD_MODE, v)));
-        c.addView(ui.segmented("Steering (Drive layout)", "Stick: analog. Arrows: two big buttons. Tilt: turn the phone like a wheel.",
-                new String[] {"Stick", "Arrows", "Tilt"},
-                new int[] {Settings.STEER_STICK, Settings.STEER_ARROWS, Settings.STEER_TILT},
+        c.addView(ui.segmented("Control mode", "MOBILE: steering, pedals, nitrous, e-brake, Speedbreaker; in the game's menus, its buttons. XBOX: the whole Xbox controller.",
+                new String[] {"MOBILE", "XBOX"}, new int[] {Settings.MODE_MOBILE, Settings.MODE_XBOX},
+                num(Settings.K_PAD_MODE, Settings.MODE_MOBILE), v -> put(Settings.K_PAD_MODE, v)));
+        c.addView(ui.segmented("Steering (MOBILE)", "Stick: analog. Arrows: two big buttons. Wheel: drag round the wheel. Tilt: turn the phone like a wheel.",
+                new String[] {"Stick", "Arrows", "Wheel", "Tilt"},
+                new int[] {Settings.STEER_STICK, Settings.STEER_ARROWS, Settings.STEER_WHEEL, Settings.STEER_TILT},
                 num(Settings.K_STEER, Settings.STEER_STICK), v -> put(Settings.K_STEER, v)));
         c.addView(ui.slider("Tilt sensitivity", "Further right, less tilt is needed to steer all the way.",
                 1, 10, num(Settings.K_TILT_SENS, 5),

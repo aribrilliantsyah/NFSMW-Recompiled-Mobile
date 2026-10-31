@@ -71,8 +71,8 @@ final class Settings {
     // Touch controls
     static final String K_PAD = "pad";
     static final String K_PAD_AUTOHIDE = "pad_autohide";
-    static final String K_PAD_MODE = "pad_mode";      // 0 full, 1 steering
-    static final String K_STEER = "steer";            // steering mode: 0 stick, 1 arrows, 2 tilt
+    static final String K_PAD_MODE = "pad_mode";      // 0 xbox, 1 mobile
+    static final String K_STEER = "steer";            // steering mode: 0 stick, 1 arrows, 2 tilt, 3 wheel
     static final String K_TILT_SENS = "tilt_sens";    // 1..10
     static final String K_VIBRATE = "vibrate";
     static final String K_HAPTIC = "haptic";          // tick on press
@@ -86,11 +86,13 @@ final class Settings {
     // Advanced
     static final String K_PERF_LOG = "perf_log";
 
-    static final int MODE_FULL = 0;
-    static final int MODE_STEERING = 1;
+    // the stored numbers of the old FULL and DRIVE layouts, so a saved pad_mode keeps its meaning
+    static final int MODE_XBOX = 0;
+    static final int MODE_MOBILE = 1;
     static final int STEER_STICK = 0;
     static final int STEER_ARROWS = 1;
     static final int STEER_TILT = 2;
+    static final int STEER_WHEEL = 3;
 
     /** The HUD items src/common/hud_layout.h moves, as layout.toml's [hud] keys. */
     static final String[] HUD_IDS = {"speedometer", "minimap", "race_info", "ea_trax"};
@@ -170,7 +172,7 @@ final class Settings {
         {K_PRELOAD, K_PRELOAD, false}, {K_SKIP_MOVIES, K_SKIP_MOVIES, false}, {K_CHEAT_NOS, K_CHEAT_NOS, false},
         {K_CHEAT_SB, K_CHEAT_SB, false}, {K_CHEAT_CASH, K_CHEAT_CASH, false}, {K_CHEAT_COPS, K_CHEAT_COPS, false},
         {K_CHEAT_UNLOCK, K_CHEAT_UNLOCK, false}, {K_AUDIO_OUT, K_AUDIO_OUT, 0}, {K_LANGUAGE, K_LANGUAGE, "int"},
-        {K_PAD_MODE, K_PAD_MODE, MODE_STEERING}, {K_STEER, K_STEER, STEER_STICK}, {K_TILT_SENS, K_TILT_SENS, 5},
+        {K_PAD_MODE, K_PAD_MODE, MODE_MOBILE}, {K_STEER, K_STEER, STEER_STICK}, {K_TILT_SENS, K_TILT_SENS, 5},
     };
 
     /** The header the launcher once wrote; the file is no longer rewritten at PLAY. */
@@ -202,15 +204,15 @@ final class Settings {
     /** The overlay's mode, steering and tilt from the settings file (the in-game overlay, the editor); the file is
      *  anyone's to edit, and the overlay indexes its per-mode arrays with these, so an unknown value is the default. */
     static int padMode(Context c) {
-        return oneOf(nativeSettings(c).getInt(K_PAD_MODE, MODE_STEERING), new int[] {MODE_FULL, MODE_STEERING},
-                     MODE_STEERING);
+        return oneOf(nativeSettings(c).getInt(K_PAD_MODE, MODE_MOBILE), new int[] {MODE_XBOX, MODE_MOBILE},
+                     MODE_MOBILE);
     }
 
     static boolean widescreen(Context c) { return nativeSettings(c).getBool(K_WIDESCREEN, true); }
 
     static int steer(Context c) {
-        return oneOf(nativeSettings(c).getInt(K_STEER, STEER_STICK), new int[] {STEER_STICK, STEER_ARROWS, STEER_TILT},
-                     STEER_STICK);
+        return oneOf(nativeSettings(c).getInt(K_STEER, STEER_STICK),
+                     new int[] {STEER_STICK, STEER_ARROWS, STEER_TILT, STEER_WHEEL}, STEER_STICK);
     }
 
     static int tiltSens(Context c) { return within(nativeSettings(c).getInt(K_TILT_SENS, 5), 1, 10, 5); }

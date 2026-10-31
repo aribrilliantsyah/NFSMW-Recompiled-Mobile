@@ -408,7 +408,6 @@ void FingerUp(SDL_FingerID id) {
 // is followed by its zoom, "ZOOM 1.5X", its R by nothing) gives way to ZOOM OUT and ZOOM IN (Rangga's FeLabel, its
 // triggers' part)
 std::string TriggerLabel(const game::FePrompts& p, int prompt) {
-    if (!p.shown[prompt]) return {};
     auto action = [&](int i) {
         const std::string& l = p.label[i];
         return !l.empty() && std::none_of(l.begin(), l.end(), [](char c) { return c >= '0' && c <= '9'; });
@@ -420,14 +419,17 @@ std::string TriggerLabel(const game::FePrompts& p, int prompt) {
 
 }  // namespace
 
-MenuState CurrentMenu() {
-    MenuState s;
-    if (!FeMenu()) return s;
+std::optional<std::vector<MenuPrompt>> CurrentMenuPrompts() {
+    if (!FeMenu()) return std::nullopt;
     game::FePrompts p = game::CurrentFePrompts();
-    s.menu = true;
-    s.zoom_out = TriggerLabel(p, game::kFePromptLT);
-    s.zoom_in = TriggerLabel(p, game::kFePromptRT);
-    return s;
+    std::vector<MenuPrompt> out;
+    // the prompt's index is its pad button: A B X Y LT RT
+    for (int i = 0; i < game::kFePromptCount; i++) {
+        if (!p.shown[i]) continue;
+        bool trigger = i == game::kFePromptLT || i == game::kFePromptRT;
+        out.push_back({trigger ? TriggerLabel(p, i) : p.label[i], i});
+    }
+    return out;
 }
 
 namespace {

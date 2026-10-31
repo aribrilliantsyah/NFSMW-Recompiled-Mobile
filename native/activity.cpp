@@ -65,19 +65,22 @@ JNIEXPORT void JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeLooseRelease
     input::LooseRelease();
 }
 
-// TouchControllerView, a few times a second: the FEng menu's trigger prompts, for the zoom pills it draws (their
-// presses are its LT and RT). null with no menu up, else { ZOOM OUT's label, ZOOM IN's label }, empty while the
-// menu does not prompt that trigger
-JNIEXPORT jobjectArray JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeMenuPills(JNIEnv* env, jclass) {
-    touch::MenuState s = touch::CurrentMenu();
-    if (!s.menu) return nullptr;
+// TouchControllerView, a few times a second: the FEng menu's button prompts, for the icon buttons it draws over the
+// menu. null with no menu up, else { label, pad, label, pad, ... }, pad one of A B X Y LT RT (the button a tap on it
+// presses)
+JNIEXPORT jobjectArray JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeMenuPrompts(JNIEnv* env, jclass) {
+    std::optional<std::vector<touch::MenuPrompt>> prompts = touch::CurrentMenuPrompts();
+    if (!prompts) return nullptr;
+    static constexpr const char* kPads[] = {"A", "B", "X", "Y", "LT", "RT"};
     jclass string = env->FindClass("java/lang/String");
-    jobjectArray out = env->NewObjectArray(2, string, nullptr);
-    const std::string* labels[] = {&s.zoom_out, &s.zoom_in};
-    for (jsize i = 0; i < 2; i++) {
-        jstring v = env->NewStringUTF(labels[i]->c_str());
-        env->SetObjectArrayElement(out, i, v);
-        env->DeleteLocalRef(v);
+    jobjectArray out = env->NewObjectArray(jsize(prompts->size() * 2), string, nullptr);
+    jsize i = 0;
+    for (const touch::MenuPrompt& p : *prompts) {
+        for (const char* s : {p.label.c_str(), kPads[p.pad]}) {
+            jstring v = env->NewStringUTF(s);
+            env->SetObjectArrayElement(out, i++, v);
+            env->DeleteLocalRef(v);
+        }
     }
     env->DeleteLocalRef(string);
     return out;

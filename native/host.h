@@ -2,7 +2,9 @@
 // What the Android host's parts share: the window, the app's lifecycle, the event routing and the launcher shell
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <vector>
 
 union SDL_Event;
 struct SDL_Window;
@@ -49,13 +51,14 @@ namespace touch {
 bool OnEvent(const SDL_Event& e);
 // port 0's pad before the game reads it: the menus' taps and swipes, the back key
 void Apply(input::Pad& pad);
-// any thread: a FEng menu is up (the touches the overlay leaves are its pointer and swipes), and the trigger pills'
-// labels while it prompts L1 / R1 (the showcase's and the world map's zoom)
-struct MenuState {
-    bool menu = false;
-    std::string zoom_out, zoom_in;  // empty while not prompted
+// any thread: the FEng menu's button prompts, each its label ("ACCEPT"; the triggers' ZOOM OUT / ZOOM IN where they
+// zoom) and the pad button it is for (game::FePrompts' index: 0 A, 1 B, 2 X, 3 Y, 4 LT, 5 RT); none with no menu up
+// (the touches the overlay leaves are the menu's pointer and swipes only then)
+struct MenuPrompt {
+    std::string label;
+    int pad;
 };
-MenuState CurrentMenu();
+std::optional<std::vector<MenuPrompt>> CurrentMenuPrompts();
 }  // namespace touch
 
 // ImGui's frame (ui.cpp): no input, the FPS counter alone draws in it

@@ -21,7 +21,10 @@ import android.view.Surface;
 import android.view.View;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Touch controller over the game (GameActivity) or alone as its editor
@@ -31,13 +34,15 @@ import java.util.List;
  * button that fades after 4 s; the whole overlay hidden while a physical
  * pad is in use; an in-game editor behind the gear.
  *
- * Two layouts (Settings.MODE_*):
- *   FULL      the original Xbox controller: both sticks with L3/R3, D-pad,
- *             A B X Y, Black and White, LT and RT, Back and Start
- *   STEERING  for driving: steering (stick, arrows or tilting the phone)
- *             on the left, the RT and LT pedals and the face diamond in the
- *             Xbox order (A bottom, B right) with B (nitrous) big on the
- *             right, the other buttons small
+ * Two layouts (Settings.MODE_*), in ButtonArt's Ring style as the mockup
+ * (.work/nfsmw_buttons_mockup.html) has them:
+ *   MOBILE  for driving: steering (stick, arrows, a wheel or tilting the
+ *           phone), the D-pad and NOS on the left, the face buttons and the
+ *           pedals on the right, the gear lever in the middle, BACK/☰/START
+ *           and the camera on top. While a game menu is up the race
+ *           controls give way to its prompts as icon buttons
+ *           (GameActivity.nativeMenuPrompts).
+ *   XBOX    the original Xbox controller, the same in races and menus.
  *
  * State goes to native code (GameActivity.nativeSetPad / nativeSetPadRight)
  * as controller port 0, merged with a physical pad if one is plugged in.
@@ -51,36 +56,49 @@ public final class TouchControllerView extends View {
 
     private static final String PREFS = "nfsmw_touch";
     /** Bump when the factory layouts change. */
-    private static final int LAYOUT_VERSION = 5;
+    private static final int LAYOUT_VERSION = 6;
     private static final boolean DEBUG = android.util.Log.isLoggable("nfsmw-pad", android.util.Log.DEBUG);
     private static final int MODES = 2;
-    private static final String[] MODE_NAMES = {"FULL", "DRIVE"};
+    private static final String[] MODE_NAMES = {"XBOX", "MOBILE"};      // Settings.MODE_XBOX, MODE_MOBILE
     private static final long TOGGLE_MS = 4000;
     private static final float STEP = .1f, SCALE_MIN = .5f, SCALE_MAX = 2.2f, OPA_MIN = .15f;
+    /** The wheel's lock each way, degrees of turning it: full lock on the left stick. */
+    private static final float WHEEL_LOCK = 120f;
+    /** How long a tap on a menu prompt, or a stick's or the gear lever's click, holds its pad button. */
+    private static final long PULSE_MS = 120;
+    /** A touch on a stick or the gear lever shorter than this, not moved, is its click. */
+    private static final long CLICK_MS = 250;
 
     private static final String HELP = "Drag to move · SIZE: selected or all";
     private static final int ACCENT = Color.rgb(0x6F, 0x74, 0x32);
-    private static final int PRESSED = Color.argb(190, 0x6F, 0x74, 0x32);
     private static final int UI_BG = Color.argb(190, 16, 17, 20);
 
-    private static final int K_STICK = 0, K_ROUND = 1, K_RECT = 2, K_PEDAL = 3, K_DPAD = 4, K_ARROW = 5;
+    private static final int K_STICK = 0, K_ROUND = 1, K_RECT = 2, K_PEDAL = 3, K_DPAD = 4, K_ARROW = 5,
+            K_WHEEL = 6, K_GEAR = 7;
 
     /** One on-screen control. */
     private final class Control {
         final String id;
         final ButtonArt.Icon icon;          // null: the letter alone
-        final String badge;                 // the pad button's name on the icon's badge
-        final String letter;                // FULL draws the pad's letter instead of the icon, as the pad has it
+        final String badge;                 // the pad button's name on the icon's badge (MOBILE)
+        final String letter;                // with no icon: the pad's letter, as the pad has it
         final int kind, digital, face, trigger, arrow;
-        final float baseW, baseH;          // radius in w for round/stick/dpad
+        final float baseW, baseH;          // radius in u for round/stick/dpad/wheel/gear, else width and height
         int color = ButtonArt.COLOR_GREY;
+        boolean right;                      // a stick: the right one
+        int click;                          // a stick or the gear lever: the button a tap on it clicks (L3, R3)
+        boolean menu;                       // the ☰: GameActivity's menu, no pad button
+        boolean inMenus;                    // MOBILE: still shown while a game menu is up
         int visibleIn;                      // bit per mode
         final float[] fx = new float[MODES], fy = new float[MODES], fs = new float[MODES];
         final float[] px = new float[MODES], py = new float[MODES], ps = new float[MODES];
         final boolean[] own = new boolean[MODES];
         float cx, cy, scale = 1f;
         boolean down;
-        float kx, ky;                       // stick knob offset, -1..1
+        float kx, ky;                       // stick or gear knob offset, -1..1
+        boolean moved;                      // a stick or the gear lever: dragged since it came down, not a click
+        long downAt;                        // uptime it came down: a click is short
+        float angle, lastRaw;               // the wheel: turned clockwise, degrees; the finger's last angle round it
         int pointer = -1;
 
         Control(String id, ButtonArt.Icon icon, String badge, String letter, int kind, int digital, int face,
@@ -90,8 +108,9 @@ public final class TouchControllerView extends View {
             this.baseW = baseW; this.baseH = baseH;
         }
 
-        Control at(int mode, float x, float y, float s) {
-            fx[mode] = x; fy[mode] = y; fs[mode] = s;
+        /** Factory place in a mode, fractions of the screen. */
+        Control at(int mode, float x, float y) {
+            fx[mode] = x; fy[mode] = y; fs[mode] = 1f;
             visibleIn |= 1 << mode;
             return this;
         }
@@ -99,9 +118,14 @@ public final class TouchControllerView extends View {
         boolean shown() { return (visibleIn & (1 << mode)) != 0; }
         float w() { return baseW * unit * scale; }
         float h() { return baseH * unit * scale; }
+        boolean radial() {
+            return kind == K_STICK || kind == K_ROUND || kind == K_DPAD || kind == K_WHEEL || kind == K_GEAR;
+        }
         float reach() {
             if (kind == K_STICK) return w() * 1.35f;
             if (kind == K_DPAD) return w() * 1.05f;              // the cross spans 2w
+            if (kind == K_WHEEL) return w();
+            if (radial()) return w() + unit * .12f;
             return Math.max(w(), h()) * .6f + unit * .12f;
         }
 
@@ -116,21 +140,31 @@ public final class TouchControllerView extends View {
         }
 
         boolean contains(float x, float y) {
-            switch (kind) {
-                case K_STICK: case K_ROUND: case K_DPAD: {
-                    float r = reach(), dx = x - cx, dy = y - cy;
-                    return dx * dx + dy * dy <= r * r;
-                }
-                default: {
-                    float s = unit * .12f;
-                    return Math.abs(x - cx) <= w() * .5f + s && Math.abs(y - cy) <= h() * .5f + s;
-                }
+            if (radial()) {
+                float r = reach(), dx = x - cx, dy = y - cy;
+                return dx * dx + dy * dy <= r * r;
             }
+            float s = unit * .12f;
+            return Math.abs(x - cx) <= w() * .5f + s && Math.abs(y - cy) <= h() * .5f + s;
         }
     }
 
+    /** One of a game menu's prompts as a MOBILE button. */
+    private static final class Prompt {
+        final int pad;                      // PROMPT_PADS' index: 0 A, 1 B, 2 X, 3 Y, 4 LT, 5 RT
+        final ButtonArt.Icon icon;          // null: the pad's letter
+        float cx, cy, r;
+
+        Prompt(int pad, ButtonArt.Icon icon) { this.pad = pad; this.icon = icon; }
+    }
+    /** nativeMenuPrompts' pad names, in native/touch.cpp's order. */
+    private static final String[] PROMPT_PADS = {"A", "B", "X", "Y", "LT", "RT"};
+    private static final int[] PROMPT_COLORS = {ButtonArt.COLOR_A, ButtonArt.COLOR_B, ButtonArt.COLOR_X,
+            ButtonArt.COLOR_Y, ButtonArt.COLOR_GREY, ButtonArt.COLOR_GREY};
+
     private final List<Control> controls = new ArrayList<>();
     private final SparseArray<Control> pointers = new SparseArray<>();
+    private final Set<Integer> taps = new HashSet<>();          // pointers that tapped a prompt or the ☰
     private final SharedPreferences touchPrefs, prefs;
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -149,22 +183,30 @@ public final class TouchControllerView extends View {
     private final boolean autoHide, haptic;
     private boolean toggleVisible = true;
     private final Runnable hideToggle = () -> { toggleVisible = false; invalidate(); };
+    // the bar: HIDE/TOUCH, the editor, the mode; its ☰ only while the controls (and their ☰) are not drawn
     private final RectF toggleBtn = new RectF(), gearBtn = new RectF(), modeBtn = new RectF(), menuBtn = new RectF();
     /** The in-game menu (hamburger): set by GameActivity. */
     Runnable onMenu;
 
     // The game's own menus (native/touch.cpp): touches off the controls reach SDLSurface and are FEng's pointer,
-    // swipes and the keyboard's keys. A menu prompting the triggers (the showcase's and the world map's zoom) gets
-    // ZOOM OUT / ZOOM IN pills, as Rangga's overlay drew them, pressing LT / RT.
+    // swipes and the keyboard's keys. In MOBILE the race controls give way to the menu's prompts while one is up.
     private static final long MENU_POLL_MS = 250;
-    private final String[] zoomLabel = {"", ""};      // LT, RT; empty: not prompted
-    private final RectF[] zoomBtn = {new RectF(), new RectF()};
-    private final int[] zoomPointer = {-1, -1};
+    private String[] lastPrompts;           // nativeMenuPrompts' last answer
+    private List<Prompt> prompts;           // null: no game menu up, or XBOX, which keeps its layout
     private final Runnable menuPoll = new Runnable() {
         @Override public void run() {
             pollMenu();
             postDelayed(this, MENU_POLL_MS);
         }
+    };
+
+    // a tap's pad button, held PULSE_MS: a menu prompt, a stick's or the gear lever's click
+    private int pulseDigital, pulseFace, pulseLt, pulseRt, pulsePad = -1;
+    private final Runnable endPulse = () -> {
+        pulseDigital = pulseFace = pulseLt = pulseRt = 0;
+        pulsePad = -1;
+        send();
+        invalidate();
     };
 
     // editor
@@ -285,6 +327,7 @@ public final class TouchControllerView extends View {
         if (inputManager != null) inputManager.unregisterInputDeviceListener(padListener);
         removeCallbacks(hideToggle);
         removeCallbacks(menuPoll);
+        removeCallbacks(endPulse);
         stopTilt();
         super.onDetachedFromWindow();
     }
@@ -304,98 +347,98 @@ public final class TouchControllerView extends View {
 
     private void build() {
         controls.clear();
-        final int F = Settings.MODE_FULL, S = Settings.MODE_STEERING;
+        final int XB = Settings.MODE_XBOX, MO = Settings.MODE_MOBILE;
+        final float u = unit, w = width, h = height;
 
-        // ---------------- FULL: the original Xbox controller ----------------
-        Control lt = add(new Control("lt", ButtonArt.Icon.BRAKE, null, null, K_RECT, 0, -1, 1, 0, 1.45f, .62f));
-        Control rt = add(new Control("rt", ButtonArt.Icon.GAS, null, null, K_RECT, 0, -1, 2, 0, 1.45f, .62f));
-
-        Control back = add(new Control("back", ButtonArt.Icon.BACK, null, null, K_RECT, BACK, -1, 0, 0, .95f, .44f));
-        Control start = add(new Control("start", ButtonArt.Icon.START, null, null, K_RECT, START, -1, 0, 0, .95f, .44f));
-
-        Control ls = add(new Control("ls", null, null, null, K_STICK, 0, -1, 0, 0, .9f, 0));
-        Control rs = add(new Control("rs", null, null, null, K_STICK, 0, -1, 0, 0, .9f, 0));
-
-        Control dpad = add(new Control("dpad", null, null, null, K_DPAD, 0, -1, 0, 0, .95f, 0));
-
-        Control a = add(new Control("a", ButtonArt.Icon.EBRAKE, "A", "A", K_ROUND, 0, A, 0, 0, .40f, 0));
-        Control b = add(new Control("b", ButtonArt.Icon.NOS, "B", "B", K_ROUND, 0, B, 0, 0, .40f, 0));
-        Control x = add(new Control("x", ButtonArt.Icon.SPEEDBREAKER, "X", "X", K_ROUND, 0, X, 0, 0, .40f, 0));
-        Control y = add(new Control("y", ButtonArt.Icon.LOOKBACK, "Y", "Y", K_ROUND, 0, Y, 0, 0, .40f, 0));
-        a.color = ButtonArt.COLOR_A; b.color = ButtonArt.COLOR_B; x.color = ButtonArt.COLOR_X; y.color = ButtonArt.COLOR_Y;
-
+        // ---------------- MOBILE: the mockup's race layout ----------------
+        // One left margin for the left column, the pedals' distance from the right edge: the D-pad, stick, wheel and
+        // left arrow put their left edge on it.
+        final float margin = .0248f * w;
+        top(add(pill("back", ButtonArt.Icon.BACK, BACK)).at(MO, .43f, .07f));
+        top(menu(add(round("menu", ButtonArt.Icon.MENU, null, null, 0, -1, 0, .9f, ButtonArt.COLOR_GREY)))).at(MO, .50f, .07f);
+        top(add(pill("start", ButtonArt.Icon.START, START)).at(MO, .57f, .07f));
         // Black is the camera; its badge an empty disc, as Black has no letter
-        Control blk = add(new Control("black", ButtonArt.Icon.CAMERA, " ", null, K_ROUND, 0, BLACK, 0, 0, .30f, 0));
-        Control wht = add(new Control("white", null, null, "W", K_ROUND, 0, WHITE, 0, 0, .30f, 0));
-        wht.color = ButtonArt.COLOR_WHITE;
+        add(round("black", ButtonArt.Icon.CAMERA, " ", null, 0, BLACK, 0, .9f, ButtonArt.COLOR_GREY)).at(MO, .95f, .07f);
+        Control dpad = add(new Control("dpad", null, null, null, K_DPAD, 0, -1, 0, 0, .8f, 0));
+        place(dpad, MO, margin + .8f * u, .41f * h);
+        add(round("nos", ButtonArt.Icon.NOS, "B", null, 0, B, 0, 1.5f, ButtonArt.COLOR_B)).at(MO, .219f, .539f);
+        if (steer == Settings.STEER_STICK) {
+            Control ls = add(new Control("ls", null, null, null, K_STICK, 0, -1, 0, 0, 1.2f, 0));
+            place(ls, MO, margin + 1.2f * u, .718f * h);
+        } else if (steer == Settings.STEER_ARROWS) {
+            // the arrows mirror the pedals: the same gap between them, the same distance from the edge, bottoms on
+            // the pedals' line
+            float d = 1.9f * u, lx = margin + d / 2, rx = lx + d + .021f * w, y = h - .0391f * h - .06f * h - d / 2;
+            place(add(new Control("steer_l", ButtonArt.Icon.LEFT, null, null, K_ARROW, 0, -1, 0, -1, 1.9f, 1.9f)), MO, lx, y);
+            place(add(new Control("steer_r", ButtonArt.Icon.RIGHT, null, null, K_ARROW, 0, -1, 0, 1, 1.9f, 1.9f)), MO, rx, y);
+        } else if (steer == Settings.STEER_WHEEL) {
+            Control wheel = add(new Control("wheel", null, null, null, K_WHEEL, 0, -1, 0, 0, 1.35f, 0));
+            place(wheel, MO, margin + 1.35f * u, .718f * h);
+        }                                                   // tilt: nothing on the screen
+        add(round("y", ButtonArt.Icon.LOOKBACK, "Y", null, 0, Y, 0, 1.15f, ButtonArt.COLOR_Y)).at(MO, .862f, .30f);
+        add(round("x", ButtonArt.Icon.SPEEDBREAKER, "X", null, 0, X, 0, 1.15f, ButtonArt.COLOR_X)).at(MO, .939f, .46f);
+        add(round("a", ButtonArt.Icon.EBRAKE, "A", null, 0, A, 0, 1.15f, ButtonArt.COLOR_A)).at(MO, .805f, .52f);
+        add(new Control("gas", ButtonArt.Icon.GAS, "RT", null, K_PEDAL, 0, -1, 2, 0, 1.45f, 2.7f)).at(MO, .939f, .751f);
+        add(new Control("brake", ButtonArt.Icon.BRAKE, "LT", null, K_PEDAL, 0, -1, 1, 0, 1.35f, 2.1f)).at(MO, .848f, .781f);
+        // the gear lever is the right stick (the spec's "Gear lever | right stick"): a drag is that stick, a tap
+        // clicks it (R3); the DRIVE layout had no gear to keep the behaviour of
+        Control gear = add(new Control("gear", ButtonArt.Icon.GEAR, null, null, K_GEAR, 0, -1, 0, 0, .5f, 0));
+        gear.right = true;
+        gear.click = R3;
+        gear.at(MO, .55f, .79f);
 
-        Control l3 = add(new Control("l3", null, null, "L3", K_ROUND, L3, -1, 0, 0, .28f, 0));
-        Control r3 = add(new Control("r3", null, null, "R3", K_ROUND, R3, -1, 0, 0, .28f, 0));
-
-
-        // FULL, placed like a held Xbox controller in the side bars: left
-        // thumb = left stick (L3 beside it) over the D-pad, right thumb = the
-        // face diamond with Black/White above it over the right stick (R3
-        // beside it); triggers at the top corners, Back/Start inside them.
-        {
-            float u = unit, cxR = width - 2.0f * u;
-            place(lt, F, 1.25f * u, .6f * u, 1f);
-            place(rt, F, width - 1.25f * u, .6f * u, 1f);
-            place(back, F, 2.9f * u, .6f * u, 1f);
-            place(start, F, width - 2.9f * u, .6f * u, 1f);
-            place(ls, F, 2.0f * u, height * .5f - .55f * u, 1f);
-            place(l3, F, .55f * u, height * .5f - 1.75f * u, 1f);
-            place(dpad, F, 2.0f * u, height - 1.55f * u, 1.05f);
-            float fy = height * .5f - .55f * u, st = .8f * u;
-            place(a, F, cxR, fy + st, 1f);
-            place(b, F, cxR + st, fy, 1f);
-            place(x, F, cxR - st, fy, 1f);
-            place(y, F, cxR, fy - st, 1f);
-            place(wht, F, cxR + st, fy - 1.85f * st, 1f);
-            place(blk, F, cxR - st, fy - 1.85f * st, 1f);
-            place(rs, F, cxR, height - 1.6f * u, .95f);
-            place(r3, F, width - .55f * u, height - 2.6f * u, 1f);
-        }
-
-        // ---------------- STEERING: driving ----------------
-        // Fractions of the screen tuned on a 20:9 phone (layout preview,
-        // 2026-10-30): left thumb = steering, D-pad, menu buttons and NOS;
-        // right thumb = pedals with A, X, Y above them.
-        if (steer == Settings.STEER_STICK) ls.at(S, .102f, .778f, 1.3f);
-        Control al = add(new Control("steer_l", ButtonArt.Icon.LEFT, null, null, K_ARROW, 0, -1, 0, -1, 1.35f, 1.35f));
-        Control ar = add(new Control("steer_r", ButtonArt.Icon.RIGHT, null, null, K_ARROW, 0, -1, 0, 1, 1.35f, 1.35f));
-        if (steer == Settings.STEER_ARROWS) {
-            al.at(S, .063f, .839f, 1f);
-            ar.at(S, .137f, .839f, 1f);
-        }
-        dpad.at(S, .102f, .45f, 1.25f);
-        back.at(S, .065f, .161f, 1.35f);
-        start.at(S, .14f, .161f, 1.35f);
-        blk.at(S, .065f, .069f, 1.2f);
-        wht.at(S, .14f, .069f, 1.2f);
-        Control gas = add(new Control("gas", ButtonArt.Icon.GAS, "RT", null, K_PEDAL, 0, -1, 2, 0, 1.25f, 2.5f));
-        Control brk = add(new Control("brake", ButtonArt.Icon.BRAKE, "LT", null, K_PEDAL, 0, -1, 1, 0, 1.15f, 1.9f));
-        gas.at(S, .939f, .811f, 1f);
-        brk.at(S, .848f, .841f, 1f);
-        Control boost = add(new Control("nos", ButtonArt.Icon.NOS, "B", null, K_ROUND, 0, B, 0, 0, .46f, 0));
-        boost.color = b.color;
-        boost.at(S, .219f, .599f, 1.2f);
-        a.at(S, .937f, .495f, 1.05f);
-        x.at(S, .823f, .558f, 1.05f);
-        y.at(S, .882f, .559f, 1.05f);
-        lt.visibleIn &= ~(1 << S);
-        rt.visibleIn &= ~(1 << S);
+        // ---------------- XBOX: the whole pad, the mockup's layout ----------------
+        // ids of their own: the editor keeps each control's place per mode under its id
+        add(round("x_lt", null, null, "LT", 0, -1, 1, 1.1f, ButtonArt.COLOR_GREY)).at(XB, .06f, .09f);
+        add(round("x_rt", null, null, "RT", 0, -1, 2, 1.1f, ButtonArt.COLOR_GREY)).at(XB, .94f, .09f);
+        add(pill("x_back", ButtonArt.Icon.BACK, BACK)).at(XB, .43f, .07f);
+        menu(add(round("x_menu", ButtonArt.Icon.MENU, null, null, 0, -1, 0, .9f, ButtonArt.COLOR_GREY))).at(XB, .50f, .07f);
+        add(pill("x_start", ButtonArt.Icon.START, START)).at(XB, .57f, .07f);
+        Control ls = add(new Control("x_ls", null, null, null, K_STICK, 0, -1, 0, 0, 1f, 0));
+        ls.click = L3;
+        ls.at(XB, .10f, .44f);
+        add(new Control("x_dpad", null, null, null, K_DPAD, 0, -1, 0, 0, 1.05f, 0)).at(XB, .10f, .80f);
+        float cxR = .90f, cyR = .44f, dx = .05f, dy = .11f;
+        add(round("x_a", null, null, "A", 0, A, 0, 1f, ButtonArt.COLOR_A)).at(XB, cxR, cyR + dy);
+        add(round("x_b", null, null, "B", 0, B, 0, 1f, ButtonArt.COLOR_B)).at(XB, cxR + dx, cyR);
+        add(round("x_x", null, null, "X", 0, X, 0, 1f, ButtonArt.COLOR_X)).at(XB, cxR - dx, cyR);
+        add(round("x_y", null, null, "Y", 0, Y, 0, 1f, ButtonArt.COLOR_Y)).at(XB, cxR, cyR - dy);
+        add(round("x_black", ButtonArt.Icon.CAMERA, null, null, 0, BLACK, 0, .75f, ButtonArt.COLOR_GREY)).at(XB, cxR - dx, cyR - 2 * dy);
+        add(round("x_white", null, null, "W", 0, WHITE, 0, .75f, ButtonArt.COLOR_WHITE)).at(XB, cxR + dx, cyR - 2 * dy);
+        Control rs = add(new Control("x_rs", null, null, null, K_STICK, 0, -1, 0, 0, .95f, 0));
+        rs.right = true;
+        rs.click = R3;
+        rs.at(XB, cxR, .80f);
 
         for (Control c : controls) load(c);
         useMode(mode);
         layoutUi();
+        prompts = lastPrompts == null ? null : layoutPrompts(lastPrompts);
         send();
         invalidate();
     }
 
+    /** A round button diameter u across. */
+    private Control round(String id, ButtonArt.Icon icon, String badge, String letter, int digital, int face,
+                          int trigger, float diameter, int color) {
+        Control c = new Control(id, icon, badge, letter, K_ROUND, digital, face, trigger, 0, diameter / 2, 0);
+        c.color = color;
+        return c;
+    }
+
+    /** BACK and START: small rounded rectangles. */
+    private Control pill(String id, ButtonArt.Icon icon, int digital) {
+        return new Control(id, icon, null, null, K_RECT, digital, -1, 0, 0, 1.2f, .7f);
+    }
+
+    private Control menu(Control c) { c.menu = true; return c; }
+
+    /** MOBILE's top row stays over the game's menus too. */
+    private Control top(Control c) { c.inMenus = true; return c; }
+
     /** Factory position in pixels for a mode (stored as fractions). */
-    private void place(Control c, int mode, float px, float py, float s) {
-        c.at(mode, px / width, py / height, s);
+    private void place(Control c, int mode, float px, float py) {
+        c.at(mode, px / width, py / height);
     }
 
     private Control add(Control c) {
@@ -419,20 +462,28 @@ public final class TouchControllerView extends View {
         invalidate();
     }
 
+    /** Drawn and touchable now: in its mode, and in MOBILE over a game menu only the top row. */
+    private boolean visible(Control c) {
+        return c.shown() && (editing || prompts == null || c.inMenus);
+    }
+
     private void layoutUi() {
+        // the bar, top left: the top centre is BACK/☰/START's, and the left column starts below it
         text.setTextSize(dp(11));
         float h = Math.max(dp(26), unit * .42f);
-        float top = dp(6);
+        float top = dp(6), gap = dp(8);
         float tw = Math.max(dp(64), text.measureText("TOUCH") + dp(24));
-        toggleBtn.set(width * .5f - tw * .5f, top, width * .5f + tw * .5f, top + h);
-        gearBtn.set(toggleBtn.right + dp(8), top, toggleBtn.right + dp(8) + h, top + h);
-        float mw = text.measureText("DRIVE") + dp(22);
-        modeBtn.set(toggleBtn.left - dp(8) - mw, top, toggleBtn.left - dp(8), top + h);
-        menuBtn.set(modeBtn.left - dp(8) - h, top, modeBtn.left - dp(8), top + h);
+        float mw = text.measureText("MOBILE") + dp(22);
+        float x0 = width * .12f;
+        toggleBtn.set(x0, top, x0 + tw, top + h);
+        gearBtn.set(toggleBtn.right + gap, top, toggleBtn.right + gap + h, top + h);
+        modeBtn.set(gearBtn.right + gap, top, gearBtn.right + gap + mw, top + h);
+        menuBtn.set(modeBtn.right + gap, top, modeBtn.right + gap + h, top + h);
 
         // editor bar: [-] SIZE [+]   [-] OPACITY [+]  /  [MODE] [RESET] [CANCEL] [DONE]
         text.setTextSize(dp(12));
-        float side = Math.max(dp(34), unit * .6f), gap = dp(10);
+        float side = Math.max(dp(34), unit * .6f);
+        gap = dp(10);
         float sw = text.measureText("SIZE 220 %") + dp(16);
         float ow = text.measureText("OPACITY 100 %") + dp(16);
         float row = side * 4 + sw + ow + gap * 7;
@@ -443,7 +494,7 @@ public final class TouchControllerView extends View {
         opaMinus.set(x, y, x + side, y + side); x += side + gap;
         opaTextX = x + ow * .5f; x += ow + gap;
         opaPlus.set(x, y, x + side, y + side);
-        float mw2 = text.measureText("LAYOUT: DRIVE") + dp(24);
+        float mw2 = text.measureText("LAYOUT: MOBILE") + dp(24);
         float rw = text.measureText("RESET") + dp(26), cw = text.measureText("CANCEL") + dp(26),
               dw = text.measureText("DONE") + dp(26);
         row = mw2 + rw + cw + dw + gap * 3;
@@ -460,36 +511,29 @@ public final class TouchControllerView extends View {
 
     // ---------------------------------------------------------------- drawing
 
+    private boolean padShown() { return controlsVisible && !physicalPad; }
+
     @Override
     protected void onDraw(Canvas canvas) {
         if (editing) {
-            for (Control c : controls) if (c.shown() && !hiddenBySteer(c)) drawControl(canvas, c);
+            for (Control c : controls) if (c.shown()) drawControl(canvas, c);
             if (picked != null) {
-                float rr = picked.kind == K_STICK ? picked.w() + dp(6) : Math.max(picked.w(), picked.h()) * .5f + dp(6);
+                float rr = (picked.radial() ? picked.reach() : Math.max(picked.w(), picked.h()) * .5f) + dp(6);
                 canvas.drawRect(picked.cx - rr, picked.cy - rr, picked.cx + rr, picked.cy + rr, frame);
             }
             drawEditor(canvas);
             return;
         }
-        if (controlsVisible && !physicalPad)
-            for (Control c : controls) if (c.shown() && !hiddenBySteer(c)) drawControl(canvas, c);
+        if (padShown()) {
+            for (Control c : controls) if (visible(c)) drawControl(canvas, c);
+            if (prompts != null) for (Prompt p : prompts) drawPrompt(canvas, p);
+        }
         if (toggleVisible) {
             uiButton(canvas, toggleBtn, controlsVisible ? "HIDE" : "TOUCH", dp(11));
             uiButton(canvas, gearBtn, "\u2699", dp(15));
             uiButton(canvas, modeBtn, MODE_NAMES[mode], dp(11));
-            uiButton(canvas, menuBtn, "\u2630", dp(15));
+            if (!padShown()) uiButton(canvas, menuBtn, "\u2630", dp(15));
         }
-        if (controlsVisible && !physicalPad)
-            for (int i = 0; i < 2; i++)
-                if (!zoomLabel[i].isEmpty()) zoomPill(canvas, i);
-    }
-
-    /** Steering-mode controls that the chosen steering does not use. */
-    private boolean hiddenBySteer(Control c) {
-        if (mode != Settings.MODE_STEERING) return false;
-        if (c.id.equals("ls")) return steer != Settings.STEER_STICK;
-        if (c.kind == K_ARROW) return steer != Settings.STEER_ARROWS;
-        return false;
     }
 
     private void drawControl(Canvas canvas, Control c) {
@@ -500,15 +544,22 @@ public final class TouchControllerView extends View {
                 ButtonArt.drawStick(canvas, c.cx, c.cy, rad, c.cx + c.kx * rad * .6f, c.cy + c.ky * rad * .6f, op);
                 break;
             }
-            case K_ROUND: {
-                // FULL is the pad itself: its letters; DRIVE names the action, the pad's button on the badge
-                boolean full = mode == Settings.MODE_FULL;
-                if (c.letter != null && (full || c.icon == null))
+            case K_ROUND:
+                // XBOX is the pad itself: its letters, no badges; MOBILE names the action, the pad's button on the badge
+                if (c.icon == null)
                     ButtonArt.drawRound(canvas, c.cx, c.cy, c.w(), c.color, null, c.letter, c.down, op);
                 else
-                    ButtonArt.drawRound(canvas, c.cx, c.cy, c.w(), c.color, c.icon, full ? null : c.badge, c.down, op);
+                    ButtonArt.drawRound(canvas, c.cx, c.cy, c.w(), c.color, c.icon,
+                                        mode == Settings.MODE_XBOX ? null : c.badge, c.down, op);
                 break;
-            }
+            case K_GEAR:
+                // the lever's knob follows the finger a little
+                ButtonArt.drawRound(canvas, c.cx + c.kx * c.w() * .5f, c.cy + c.ky * c.w() * .5f, c.w(), c.color,
+                                    c.icon, null, c.down || pulseDigital == c.click && c.click != 0, op);
+                break;
+            case K_WHEEL:
+                ButtonArt.drawWheel(canvas, c.cx, c.cy, c.w(), c.angle, op);
+                break;
             case K_ARROW:
                 ButtonArt.drawRound(canvas, c.cx, c.cy, Math.min(c.w(), c.h()) * .5f, c.color, c.icon, null, c.down, op);
                 break;
@@ -523,6 +574,17 @@ public final class TouchControllerView extends View {
                 ButtonArt.drawDpad(canvas, c.cx, c.cy, c.w() * 2f, c.down ? currentDpad : 0, op);
                 break;
         }
+    }
+
+    /** A menu prompt: its action's icon in a ring of its pad button's colour; no icon fits, the pad's letter. */
+    private void drawPrompt(Canvas canvas, Prompt p) {
+        float op = opacity[mode];
+        boolean on = pulsePad == p.pad;
+        int color = PROMPT_COLORS[p.pad];
+        if (p.icon != null)
+            ButtonArt.drawRound(canvas, p.cx, p.cy, p.r, color, p.icon, null, on, op);
+        else
+            ButtonArt.drawRoundLetter(canvas, p.cx, p.cy, p.r, color, PROMPT_PADS[p.pad], PROMPT_PADS[p.pad], on, op);
     }
 
     private int currentDpad;
@@ -566,39 +628,69 @@ public final class TouchControllerView extends View {
         canvas.drawText(s, x, y - (fm.ascent + fm.descent) * .5f, text);
     }
 
-    /** The menu's ZOOM OUT (LT) or ZOOM IN (RT) pill, low on the left as Rangga's overlay put them. */
-    private void zoomPill(Canvas canvas, int i) {
-        boolean on = zoomPointer[i] >= 0;
-        fill.setColor(on ? PRESSED : UI_BG);
-        canvas.drawRoundRect(zoomBtn[i], zoomBtn[i].height() / 2, zoomBtn[i].height() / 2, fill);
-        stroke.setColor(ACCENT);
-        canvas.drawRoundRect(zoomBtn[i], zoomBtn[i].height() / 2, zoomBtn[i].height() / 2, stroke);
-        text.setTextSize(zoomBtn[i].height() * .4f);
-        text.getFontMetrics(fm);
-        canvas.drawText(zoomLabel[i], zoomBtn[i].centerX(), zoomBtn[i].centerY() - (fm.ascent + fm.descent) * .5f, text);
+    // ------------------------------------------------------------ game menus
+
+    /** The game's menu prompts, from native: in MOBILE they replace the race controls while a menu is up. */
+    private void pollMenu() {
+        String[] p = null;
+        if (mode == Settings.MODE_MOBILE) {
+            try { p = GameActivity.nativeMenuPrompts(); } catch (UnsatisfiedLinkError e) { return; }
+        }
+        if (Arrays.equals(p, lastPrompts)) return;
+        boolean was = prompts != null;
+        lastPrompts = p;
+        prompts = p == null ? null : layoutPrompts(p);
+        if (prompts != null && !was) releaseHidden();
+        send();
+        invalidate();
     }
 
-    /** The game's menu prompts, from native: the zoom pills come and go with the menu's L1 / R1 prompts. */
-    private void pollMenu() {
-        String[] p;
-        try { p = GameActivity.nativeMenuPills(); } catch (UnsatisfiedLinkError e) { return; }
-        boolean changed = false;
-        for (int i = 0; i < 2; i++) {
-            String l = p == null ? "" : p[i];
-            if (l.equals(zoomLabel[i])) continue;
-            zoomLabel[i] = l;
-            changed = true;
-            if (l.isEmpty() && zoomPointer[i] >= 0) zoomPointer[i] = -1;
-            if (!l.isEmpty()) {
-                // RT (ZOOM IN) on top, as kFeFaces had it: left edge 3% in, middles at 40% and 50% of the height
-                float h = height * .08f;
-                text.setTextSize(h * .4f);
-                float w = Math.max(h * 2.1f * 2, text.measureText(l) + h * 1.4f);
-                float cy = height * (i == 1 ? .40f : .50f), left = width * .03f;
-                zoomBtn[i].set(left, cy - h / 2, left + w, cy + h / 2);
+    /** nativeMenuPrompts' { label, pad, ... } as buttons: the triggers' zoom on the left, the rest a centred row. */
+    private List<Prompt> layoutPrompts(String[] p) {
+        List<Prompt> out = new ArrayList<>(), row = new ArrayList<>();
+        for (int i = 0; i + 1 < p.length; i += 2) {
+            int pad = Arrays.asList(PROMPT_PADS).indexOf(p[i + 1]);
+            if (pad < 0) continue;
+            if (pad >= 4) {                 // the triggers zoom wherever they are prompted (the showcase, the map)
+                Prompt z = new Prompt(pad, pad == 4 ? ButtonArt.Icon.ZOOM_OUT : ButtonArt.Icon.ZOOM_IN);
+                z.cx = .045f * width;
+                z.cy = (pad == 4 ? .62f : .76f) * height;
+                z.r = .5f * unit;
+                out.add(z);
+            } else {
+                row.add(new Prompt(pad, ButtonArt.iconForPrompt(p[i])));
             }
         }
-        if (changed) { send(); invalidate(); }
+        for (int i = 0; i < row.size(); i++) {
+            Prompt b = row.get(i);
+            b.cx = (.5f + (i - (row.size() - 1) / 2f) * .08f) * width;
+            b.cy = .86f * height;
+            b.r = 1.15f / 2 * unit;
+            out.add(b);
+        }
+        return out;
+    }
+
+    /** The race controls a menu covers let go of what they held. */
+    private void releaseHidden() {
+        for (Control c : controls) {
+            if (visible(c) || c.pointer < 0) continue;
+            pointers.remove(c.pointer);
+            release(c);
+        }
+    }
+
+    /** A tap's pad button: held PULSE_MS, then let go. pad: PROMPT_PADS' index, or -1 with digital alone. */
+    private void pulse(int pad, int digital) {
+        pulseDigital = digital;
+        pulseFace = pad >= 0 && pad < 4 ? 1 << pad : 0;
+        pulseLt = pad == 4 ? 255 : 0;
+        pulseRt = pad == 5 ? 255 : 0;
+        pulsePad = pad;
+        removeCallbacks(endPulse);
+        postDelayed(endPulse, PULSE_MS);
+        send();
+        invalidate();
     }
 
     // ------------------------------------------------------------------ touch
@@ -610,6 +702,7 @@ public final class TouchControllerView extends View {
         float x = e.getX(idx), y = e.getY(idx);
 
         if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+            boolean barMenu = !padShown() && menuBtn.contains(x, y);
             if (toggleVisible) {
                 if (gearBtn.contains(x, y)) { openEditor(); return true; }
                 if (toggleBtn.contains(x, y)) {
@@ -619,34 +712,41 @@ public final class TouchControllerView extends View {
                     return true;
                 }
                 if (modeBtn.contains(x, y)) { switchMode(); showToggle(); return true; }
-                if (menuBtn.contains(x, y)) { releaseAll(); if (onMenu != null) onMenu.run(); return true; }
+                if (barMenu) { releaseAll(); if (onMenu != null) onMenu.run(); return true; }
             }
-            if (toggleBtn.contains(x, y) || gearBtn.contains(x, y) || modeBtn.contains(x, y) || menuBtn.contains(x, y)
+            if (toggleBtn.contains(x, y) || gearBtn.contains(x, y) || modeBtn.contains(x, y) || barMenu
                     || (physicalPad && autoHide)) {
                 if (physicalPad && autoHide) { physicalPad = false; controlsVisible = true; }
                 showToggle();
                 return true;
             }
             if (!controlsVisible) return false;
-            for (int i = 0; i < 2; i++) {
-                if (zoomLabel[i].isEmpty() || zoomPointer[i] >= 0 || !zoomBtn[i].contains(x, y)) continue;
-                zoomPointer[i] = id;
-                if (haptic) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
-                send();
-                invalidate();
-                return true;
+            if (prompts != null) {
+                for (Prompt p : prompts) {
+                    float dx = x - p.cx, dy = y - p.cy, rr = p.r + unit * .12f;
+                    if (dx * dx + dy * dy > rr * rr) continue;
+                    taps.add(id);
+                    pulse(p.pad, 0);
+                    if (haptic) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                    return true;
+                }
             }
             for (int i = controls.size() - 1; i >= 0; i--) {
                 Control c = controls.get(i);
-                if (c.pointer < 0 && c.shown() && !hiddenBySteer(c) && c.contains(x, y)) {
-                    c.pointer = id;
-                    pointers.put(id, c);
-                    press(c, x, y);
-                    if (haptic) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
-                    send();
-                    invalidate();
+                if (c.pointer >= 0 || !visible(c) || !c.contains(x, y)) continue;
+                if (haptic) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                if (c.menu) {
+                    taps.add(id);
+                    releaseAll();
+                    if (onMenu != null) onMenu.run();
                     return true;
                 }
+                c.pointer = id;
+                pointers.put(id, c);
+                press(c, x, y);
+                send();
+                invalidate();
+                return true;
             }
             // not ours: Android dispatches this pointer to the next view under it, SDLSurface, and the game's menus
             // take it (native/touch.cpp); in a race nothing does
@@ -659,20 +759,17 @@ public final class TouchControllerView extends View {
                 if (c != null) { move(c, e.getX(i), e.getY(i)); any = true; }
             }
             if (any) { send(); invalidate(); }
-            return any;
+            return any || !taps.isEmpty();
         }
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) {
-            for (int i = 0; i < 2; i++)
-                if (zoomPointer[i] == id) {
-                    zoomPointer[i] = -1;
-                    send();
-                    invalidate();
-                    return true;
-                }
+            if (taps.remove(id)) return true;
             Control c = pointers.get(id);
             if (c == null) return false;
+            // a short touch that did not move is the stick's click; a thumb resting on it and lifted is not
+            boolean click = c.click != 0 && !c.moved && android.os.SystemClock.uptimeMillis() - c.downAt < CLICK_MS;
             release(c);
             pointers.remove(id);
+            if (click) pulse(-1, c.click);
             send();
             invalidate();
             return true;
@@ -683,15 +780,28 @@ public final class TouchControllerView extends View {
 
     private void press(Control c, float x, float y) {
         c.down = true;
+        c.moved = false;
+        c.downAt = android.os.SystemClock.uptimeMillis();
+        if (c.kind == K_WHEEL) c.lastRaw = (float) Math.toDegrees(Math.atan2(y - c.cy, x - c.cx));
         move(c, x, y);
     }
 
     private void move(Control c, float x, float y) {
-        if (c.kind == K_STICK) {
-            float rad = c.w() * .6f, dx = (x - c.cx) / rad, dy = (y - c.cy) / rad;
+        if (c.kind == K_STICK || c.kind == K_GEAR) {
+            float rad = c.w() * (c.kind == K_GEAR ? 1f : .6f), dx = (x - c.cx) / rad, dy = (y - c.cy) / rad;
             float d = (float) Math.sqrt(dx * dx + dy * dy);
             if (d > 1f) { dx /= d; dy /= d; }
+            if (d > .35f) c.moved = true;
             c.kx = dx; c.ky = dy;
+        } else if (c.kind == K_WHEEL) {
+            // turned by the finger's angle round the hub, from where it came down; near the hub the angle is noise
+            float dx = x - c.cx, dy = y - c.cy;
+            if (dx * dx + dy * dy < (c.w() * .2f) * (c.w() * .2f)) return;
+            float raw = (float) Math.toDegrees(Math.atan2(dy, dx));          // clockwise on the screen
+            float d = raw - c.lastRaw;
+            if (d > 180) d -= 360; else if (d < -180) d += 360;
+            c.lastRaw = raw;
+            c.angle = clamp(c.angle + d, -WHEEL_LOCK, WHEEL_LOCK);
         } else if (c.kind == K_DPAD) {
             float dx = x - c.cx, dy = y - c.cy, dead = c.w() * .2f;
             int bits = 0;
@@ -711,13 +821,14 @@ public final class TouchControllerView extends View {
         c.down = false;
         c.pointer = -1;
         c.kx = c.ky = 0;
+        c.angle = 0;
         if (c.kind == K_DPAD) currentDpad = 0;
     }
 
     private void releaseAll() {
         for (Control c : controls) release(c);
         pointers.clear();
-        zoomPointer[0] = zoomPointer[1] = -1;
+        taps.clear();
         send();
         invalidate();
     }
@@ -727,6 +838,7 @@ public final class TouchControllerView extends View {
         mode = (mode + 1) % MODES;
         saveMode();
         useMode(mode);
+        pollMenu();
         updateTilt();
         send();
     }
@@ -747,24 +859,27 @@ public final class TouchControllerView extends View {
     private void send() {
         if (!inGame) return;
         int buttons = 0, face = 0, lt = 0, rt = 0, lx = 0, ly = 0, rx = 0, ry = 0;
-        boolean on = controlsVisible && !physicalPad;
-        if (on) {
+        if (padShown()) {
             for (Control c : controls) {
-                if (!c.down || !c.shown() || hiddenBySteer(c)) continue;
+                if (!c.down || !visible(c) || c.menu) continue;
                 buttons |= c.digital;
                 if (c.face >= 0) face |= 1 << c.face;
                 if (c.trigger == 1) lt = 255;
                 if (c.trigger == 2) rt = 255;
                 if (c.kind == K_DPAD) buttons |= currentDpad;
                 if (c.kind == K_ARROW) lx = c.arrow * 32767;
-                if (c.kind == K_STICK) {
+                if (c.kind == K_WHEEL) lx = Math.round(c.angle / WHEEL_LOCK * 32767);
+                if (c.kind == K_STICK || (c.kind == K_GEAR && c.moved)) {
                     int vx = axis(c.kx), vy = axis(-c.ky);
-                    if (c.id.equals("ls")) { lx = vx; ly = vy; } else { rx = vx; ry = vy; }
+                    if (c.right) { rx = vx; ry = vy; } else { lx = vx; ly = vy; }
                 }
             }
-            if (tiltActive()) lx = Math.round(tilt * 32767);
-            if (zoomPointer[0] >= 0) lt = 255;
-            if (zoomPointer[1] >= 0) rt = 255;
+            // tilt steers races only: over a menu the left stick would move its highlight
+            if (tiltActive() && prompts == null) lx = Math.round(tilt * 32767);
+            buttons |= pulseDigital;
+            face |= pulseFace;
+            lt = Math.max(lt, pulseLt);
+            rt = Math.max(rt, pulseRt);
         }
         if (buttons != lastB || face != lastF || lt != lastLt || rt != lastRt || lx != lastLx || ly != lastLy) {
             lastB = buttons; lastF = face; lastLt = lt; lastRt = rt; lastLx = lx; lastLy = ly;
@@ -815,7 +930,7 @@ public final class TouchControllerView extends View {
     }
 
     private boolean tiltActive() {
-        return inGame && mode == Settings.MODE_STEERING && steer == Settings.STEER_TILT
+        return inGame && mode == Settings.MODE_MOBILE && steer == Settings.STEER_TILT
                 && controlsVisible && !physicalPad && !editing;
     }
 
@@ -880,7 +995,7 @@ public final class TouchControllerView extends View {
                     picked = null;
                     for (int i = controls.size() - 1; i >= 0; i--) {
                         Control c = controls.get(i);
-                        if (c.shown() && !hiddenBySteer(c) && c.contains(x, y)) { picked = c; break; }
+                        if (c.shown() && c.contains(x, y)) { picked = c; break; }
                     }
                     if (picked != null) {
                         editPointer = e.getPointerId(idx);

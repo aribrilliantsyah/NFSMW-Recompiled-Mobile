@@ -39,7 +39,7 @@ Every setting is in the launcher. In the game, the ☰ button (it shows with HID
 - **Yellow filter** (the game's colour grading, off by default), car and road reflections, motion blur, bloom, fog, shadows, particles, rain and screen raindrops, shader preloading.
 
 ### Touch Controls
-Two layouts, **Full** (the whole Xbox controller) and **Drive** (steering by stick, arrows or tilting the phone, gas and brake pedals, nitrous, e-brake, speedbreaker), each edited in the launcher or in the game: move, resize and fade the controls. **Edit HUD position** moves the speedometer, the minimap, the race information and the EA Trax banner. In the game's menus a tap on the highlighted item is A and a swipe steps through the list.
+Two layouts, **MOBILE** (steering by stick, arrows, a wheel or tilting the phone, gas and brake pedals, nitrous, e-brake, speedbreaker, a gear lever; in the game's menus, their buttons as icons) and **XBOX** (the whole Xbox controller), each edited in the launcher or in the game: move, resize and fade the controls. **Edit HUD position** moves the speedometer, the minimap, the race information and the EA Trax banner. In the game's menus a tap on the highlighted item is A and a swipe steps through the list.
 
 ### Other Input
 - **Controller**: any controller SDL3 supports, with rumble (the phone vibrates without one), each Xbox button remappable in the launcher. The touch controls hide while a controller is in use.
