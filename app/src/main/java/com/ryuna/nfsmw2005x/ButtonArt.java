@@ -71,7 +71,7 @@ final class ButtonArt {
             case "ACCEPT": case "CONTINUE": case "OK": return Icon.ACCEPT;
             case "BACK": return Icon.BACK;
             case "RESTART": case "RESTART RACE": return Icon.RESTART;
-            case "STATISTICS": case "STATS": return Icon.STATS;
+            case "STATISTICS": case "STATS": case "GAME STATS": case "RACE STATS": return Icon.STATS;
             case "EXIT": case "QUIT": return Icon.EXIT;
             case "CANCEL": return Icon.CANCEL;
             case "ZOOM IN": return Icon.ZOOM_IN;

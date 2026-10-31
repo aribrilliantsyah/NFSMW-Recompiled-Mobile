@@ -98,7 +98,8 @@ public final class TouchControllerView extends View {
         float kx, ky;                       // stick or gear knob offset, -1..1
         boolean moved;                      // a stick or the gear lever: dragged since it came down, not a click
         long downAt;                        // uptime it came down: a click is short
-        float angle, lastRaw;               // the wheel: turned clockwise, degrees; the finger's last angle round it
+        float angle, turn, lastRaw;         // the wheel: its angle (clockwise, degrees, clamped to the lock); the
+                                            // finger's unbounded turn since it came down; its last angle round the hub
         int pointer = -1;
 
         Control(String id, ButtonArt.Icon icon, String badge, String letter, int kind, int digital, int face,
@@ -638,6 +639,7 @@ public final class TouchControllerView extends View {
         }
         if (Arrays.equals(p, lastPrompts)) return;
         boolean was = prompts != null;
+        if (DEBUG) android.util.Log.d("nfsmw-pad", "prompts " + Arrays.toString(p));
         lastPrompts = p;
         prompts = p == null ? null : layoutPrompts(p);
         if (prompts != null && !was) releaseHidden();
@@ -645,14 +647,16 @@ public final class TouchControllerView extends View {
         invalidate();
     }
 
-    /** nativeMenuPrompts' { label, pad, ... } as buttons: the triggers' zoom on the left, the rest a centred row. */
+    /** nativeMenuPrompts' { label, pad, ... } as buttons: the triggers on the left, the rest a centred row. */
     private List<Prompt> layoutPrompts(String[] p) {
         List<Prompt> out = new ArrayList<>(), row = new ArrayList<>();
         for (int i = 0; i + 1 < p.length; i += 2) {
             int pad = Arrays.asList(PROMPT_PADS).indexOf(p[i + 1]);
             if (pad < 0) continue;
-            if (pad >= 4) {                 // the triggers zoom wherever they are prompted (the showcase, the map)
-                Prompt z = new Prompt(pad, pad == 4 ? ButtonArt.Icon.ZOOM_OUT : ButtonArt.Icon.ZOOM_IN);
+            if (pad >= 4) {
+                // ZOOM OUT / ZOOM IN where they zoom (the showcase, the map); unnamed (track select's region switch),
+                // the trigger's letters
+                Prompt z = new Prompt(pad, ButtonArt.iconForPrompt(p[i]));
                 z.cx = .045f * width;
                 z.cy = (pad == 4 ? .62f : .76f) * height;
                 z.r = .5f * unit;
@@ -798,10 +802,9 @@ public final class TouchControllerView extends View {
             float dx = x - c.cx, dy = y - c.cy;
             if (dx * dx + dy * dy < (c.w() * .2f) * (c.w() * .2f)) return;
             float raw = (float) Math.toDegrees(Math.atan2(dy, dx));          // clockwise on the screen
-            float d = raw - c.lastRaw;
-            if (d > 180) d -= 360; else if (d < -180) d += 360;
+            c.turn += Wheel.delta(c.lastRaw, raw);
             c.lastRaw = raw;
-            c.angle = clamp(c.angle + d, -WHEEL_LOCK, WHEEL_LOCK);
+            c.angle = Wheel.angle(c.turn, WHEEL_LOCK);
         } else if (c.kind == K_DPAD) {
             float dx = x - c.cx, dy = y - c.cy, dead = c.w() * .2f;
             int bits = 0;
@@ -821,7 +824,7 @@ public final class TouchControllerView extends View {
         c.down = false;
         c.pointer = -1;
         c.kx = c.ky = 0;
-        c.angle = 0;
+        c.angle = c.turn = 0;
         if (c.kind == K_DPAD) currentDpad = 0;
     }
 

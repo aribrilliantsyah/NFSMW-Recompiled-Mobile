@@ -18,6 +18,9 @@ public class ButtonArtTest {
         assertEquals(ButtonArt.Icon.RESTART, ButtonArt.iconForPrompt("RESTART RACE"));
         assertEquals(ButtonArt.Icon.STATS, ButtonArt.iconForPrompt("STATISTICS"));
         assertEquals(ButtonArt.Icon.STATS, ButtonArt.iconForPrompt("STATS"));
+        // the labels the game prompts (logged on the phone): the main menu's X, the standings' X
+        assertEquals(ButtonArt.Icon.STATS, ButtonArt.iconForPrompt("GAME STATS"));
+        assertEquals(ButtonArt.Icon.STATS, ButtonArt.iconForPrompt("RACE STATS"));
         assertEquals(ButtonArt.Icon.EXIT, ButtonArt.iconForPrompt("EXIT"));
         assertEquals(ButtonArt.Icon.EXIT, ButtonArt.iconForPrompt("QUIT"));
         assertEquals(ButtonArt.Icon.CANCEL, ButtonArt.iconForPrompt("CANCEL"));

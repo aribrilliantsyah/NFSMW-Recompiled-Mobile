@@ -24,7 +24,6 @@
 #include "common/fe_mouse.h"
 #include "common/keys.h"
 #include "common/options.h"
-#include "common/translations.h"
 #include "host.h"
 
 namespace input {
@@ -404,16 +403,19 @@ void FingerUp(SDL_FingerID id) {
     std::erase_if(g_fingers, [id](const Finger& f) { return f.id == id; });
 }
 
-// the triggers zoom wherever they are prompted (the showcase, the world map): a label that is no action (the map's L
-// is followed by its zoom, "ZOOM 1.5X", its R by nothing) gives way to ZOOM OUT and ZOOM IN (Rangga's FeLabel, its
-// triggers' part)
+// the triggers zoom wherever they are prompted with a label (the showcase, the world map): a label that is no action
+// (the map's L is followed by its zoom, "ZOOM 1.5X", its R by nothing) gives way to ZOOM OUT and ZOOM IN (Rangga's
+// FeLabel, its triggers' part). With no label after either (drag track select's region switch) they stay unnamed,
+// and the overlay draws LT and RT
 std::string TriggerLabel(const game::FePrompts& p, int prompt) {
+    if (p.label[game::kFePromptLT].empty() && p.label[game::kFePromptRT].empty()) return {};
     auto action = [&](int i) {
         const std::string& l = p.label[i];
         return !l.empty() && std::none_of(l.begin(), l.end(), [](char c) { return c >= '0' && c <= '9'; });
     };
+    // untranslated: the overlay picks its icon by the label (ButtonArt.iconForPrompt), it draws no text
     if (!action(game::kFePromptLT) || !action(game::kFePromptRT))
-        return app::Ui(prompt == game::kFePromptLT ? "ZOOM OUT" : "ZOOM IN");
+        return prompt == game::kFePromptLT ? "ZOOM OUT" : "ZOOM IN";
     return p.label[prompt];
 }
 
@@ -423,7 +425,8 @@ std::optional<std::vector<MenuPrompt>> CurrentMenuPrompts() {
     if (!FeMenu()) return std::nullopt;
     game::FePrompts p = game::CurrentFePrompts();
     std::vector<MenuPrompt> out;
-    // the prompt's index is its pad button: A B X Y LT RT
+    // the prompt's index is its pad button: A B X Y LT RT; one with no label after its art is still prompted (Quick
+    // Play's A, track select's L and R): the overlay draws its letter
     for (int i = 0; i < game::kFePromptCount; i++) {
         if (!p.shown[i]) continue;
         bool trigger = i == game::kFePromptLT || i == game::kFePromptRT;
