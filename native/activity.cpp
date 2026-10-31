@@ -7,8 +7,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <string>
 
 #include "common/mouse_keyboard.h"
+#include "common/settings_menu.h"
 #include "host.h"
 
 namespace host {
@@ -33,6 +35,28 @@ void PhoneRumble(uint16_t left, uint16_t right) {
     if (env->ExceptionCheck()) env->ExceptionClear();
     env->DeleteLocalRef(cls);
     env->DeleteLocalRef(activity);
+}
+
+// the game thread: GameActivity.settingsRow answers on the UI thread and waits for it
+std::string ShellRow(int row, int step) {
+    auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (!env || !activity) return {};
+    std::string out;
+    jclass cls = env->GetObjectClass(activity);
+    jmethodID m = env->GetStaticMethodID(cls, "settingsRow", "(II)Ljava/lang/String;");
+    auto s = m ? static_cast<jstring>(env->CallStaticObjectMethod(cls, m, jint(row), jint(step))) : nullptr;
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if (s) {
+        if (const char* c = env->GetStringUTFChars(s, nullptr)) {
+            out = c;
+            env->ReleaseStringUTFChars(s, c);
+        }
+        env->DeleteLocalRef(s);
+    }
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(activity);
+    return out;
 }
 
 }  // namespace host
@@ -84,6 +108,12 @@ JNIEXPORT jobjectArray JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeMenu
     }
     env->DeleteLocalRef(string);
     return out;
+}
+
+// TouchControllerView's ☰: the settings, -1 their categories, else that category; in a race it pauses first
+// (src/game/settings_menu.cpp)
+JNIEXPORT void JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeOpenSettings(JNIEnv*, jclass, jint category) {
+    game::RequestOpenSettings(category);
 }
 
 }  // extern "C"

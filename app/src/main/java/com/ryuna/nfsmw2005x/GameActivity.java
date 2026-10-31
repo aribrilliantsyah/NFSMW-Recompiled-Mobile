@@ -38,6 +38,9 @@ public class GameActivity extends SDLActivity {
     /** The game menu's button prompts as { label, pad, label, pad, ... }, pad one of A B X Y LT RT; null with no
      *  menu up (native/activity.cpp). */
     static native String[] nativeMenuPrompts();
+    /** The overlay's ☰: the game's settings, -1 their categories, else one; in a race it pauses first
+     *  (src/game/settings_menu.cpp). */
+    static native void nativeOpenSettings(int category);
     // A controller some phones' game services pass on as a virtual device (MIUI's took a DualShock 4 on a Redmi
     // Note 8 Pro): SDL sees no controller in it and drops its input. Its buttons and sticks go to port 0 here.
     private static native void nativeLooseKey(int keyCode, boolean down);
@@ -65,6 +68,7 @@ public class GameActivity extends SDLActivity {
         sVibrate = p.getBoolean(Settings.K_VIBRATE, true);
         mPad = new TouchControllerView(this);
         mPad.onMenu = this::showMenu;
+        mPad.onSettings = () -> nativeOpenSettings(-1);
         mLayout.addView(mPad, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                                                          ViewGroup.LayoutParams.MATCH_PARENT));
         nativeSetPad(0, 0, 0, 0, 0, 0);
@@ -195,6 +199,32 @@ public class GameActivity extends SDLActivity {
     public int batteryTemperature() {
         Intent i = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         return i != null ? i.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) : -1;
+    }
+
+    // ------------------------------------------------------- in-game settings
+
+    /** From native (native/activity.cpp ShellRow), the game thread: the game's CONTROLS rows, which are the
+     *  overlay's (TouchControllerView.settingsRow; 5 its editor, 6 the HUD editor, opened on a step). Runs on the UI
+     *  thread, waited for a second at most; null when it cannot answer. */
+    @SuppressWarnings("unused")
+    static String settingsRow(int row, int step) {
+        GameActivity a = sSelf;
+        if (a == null || a.mPad == null) return null;
+        if (row >= 5) {
+            if (step != 0) a.runOnUiThread(() -> {
+                if (row == 5) a.mPad.openEditor();
+                else a.startActivity(new Intent(a, HudEditorActivity.class));
+            });
+            return "";
+        }
+        java.util.concurrent.FutureTask<String> t =
+            new java.util.concurrent.FutureTask<>(() -> a.mPad.settingsRow(row, step));
+        a.runOnUiThread(t);
+        try {
+            return t.get(1, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // ------------------------------------------------------------- rumble

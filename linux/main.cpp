@@ -28,6 +28,7 @@
 #include "app/app.h"
 #include "build_info.h"
 #include "common/aspect.h"
+#include "common/settings_menu.h"
 #include "core/input.h"
 #include "core/log.h"
 #include "host.h"
@@ -85,6 +86,10 @@ void ReadLive() {
         while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' ')) s.pop_back();
         if (s.empty()) continue;
         auto now = Clock::now();
+        if (s.rfind("settings", 0) == 0) {  // the overlay's ☰: "settings" the categories, "settings N" one
+            game::RequestOpenSettings(s.size() > 9 ? std::atoi(s.c_str() + 9) : -1);
+            continue;
+        }
         if (s.rfind("clear", 0) == 0) {
             g_steps.erase(std::remove_if(g_steps.begin(), g_steps.end(), [&](const Step& st) { return st.start > now; }),
                           g_steps.end());

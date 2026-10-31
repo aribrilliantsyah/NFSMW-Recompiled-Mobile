@@ -81,14 +81,31 @@ uint32_t GuestText(const char* text) {
     }
     return va;
 }
+
+// the recomp's own strings (the settings' headers, settings_menu.cpp), by hashes the table has not
+std::mutex g_own_lock;
+std::unordered_map<uint32_t, std::string> g_own;
+
+const char* OwnString(uint32_t hash) {
+    std::lock_guard guard(g_own_lock);
+    auto it = g_own.find(hash);
+    return it == g_own.end() ? nullptr : it->second.c_str();
+}
 }  // namespace
+
+// game thread: a string SearchForString answers for hash, Latin-1; set once (GuestText keeps the text it was given)
+void SetOwnString(uint32_t hash, const std::string& text) {
+    std::lock_guard guard(g_own_lock);
+    g_own.emplace(hash, text);
+}
 }  // namespace game
 
 X86_EXTERN_FUNC(__imp__sub_00124B50);
 X86_FUNC(sub_00124B50) {
     uint32_t hash = ctx.edx;
-    const char* text = nullptr;
+    const char* text = game::OwnString(hash);
     for (const game::Prompt& p : game::kPrompts) {
+        if (text) break;
         if (p.hash != hash) continue;
         if (!p.front_end || !game::Racing()) text = p.text[game::LanguageIndex()];
         break;

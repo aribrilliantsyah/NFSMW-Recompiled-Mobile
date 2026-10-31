@@ -177,7 +177,7 @@ public final class TouchControllerView extends View {
     private float width, height, unit;
 
     private int mode;
-    private final int steer;                // Settings.STEER_*
+    private int steer;                      // Settings.STEER_*
     private final float[] opacity = new float[MODES];
     private boolean controlsVisible = true;
     private boolean physicalPad;
@@ -186,8 +186,10 @@ public final class TouchControllerView extends View {
     private final Runnable hideToggle = () -> { toggleVisible = false; invalidate(); };
     // the bar: HIDE/TOUCH, the editor, the mode; its ☰ only while the controls (and their ☰) are not drawn
     private final RectF toggleBtn = new RectF(), gearBtn = new RectF(), modeBtn = new RectF(), menuBtn = new RectF();
-    /** The in-game menu (hamburger): set by GameActivity. */
+    /** The shell's menu (resume, layout editor, exit): the bar's ☰, set by GameActivity. */
     Runnable onMenu;
+    /** The controls' ☰: the game's settings (GameActivity.nativeOpenSettings, which pauses a race first). */
+    Runnable onSettings;
 
     // The game's own menus (native/touch.cpp): touches off the controls reach SDLSurface and are FEng's pointer,
     // swipes and the keyboard's keys. In MOBILE the race controls give way to the menu's prompts while one is up.
@@ -227,7 +229,7 @@ public final class TouchControllerView extends View {
     private final Sensor gravity;
     private final boolean accelOnly;
     private final float[] lowPass = new float[2];
-    private final float fullLockSin;
+    private float fullLockSin;
     private boolean listening;
     private float tilt;                      // -1..1
     private final SensorEventListener tiltListener = new SensorEventListener() {
@@ -742,7 +744,7 @@ public final class TouchControllerView extends View {
                 if (c.menu) {
                     taps.add(id);
                     releaseAll();
-                    if (onMenu != null) onMenu.run();
+                    if (onSettings != null) onSettings.run();
                     return true;
                 }
                 c.pointer = id;
@@ -1077,6 +1079,70 @@ public final class TouchControllerView extends View {
     boolean onBack() {
         if (editing && inGame) { finishEditor(false); return true; }
         return false;
+    }
+
+    // ------------------------------------------------------- in-game settings
+
+    private static final String[] STEER_NAMES = {"STICK", "ARROWS", "TILT", "WHEEL"};
+
+    /** The game's CONTROLS rows (src/common/settings_rows.cpp, GameActivity.settingsRow), UI thread: 0 mode,
+     *  1 steering, 2 tilt sensitivity, 3 opacity, 4 size (every control of the mode); step changes it and saves. */
+    String settingsRow(int row, int step) {
+        Context c = getContext();
+        try {
+            switch (row) {
+                case 0:
+                    if (step != 0) switchMode();
+                    return MODE_NAMES[mode];
+                case 1:
+                    if (step != 0) {
+                        steer = Math.floorMod(steer + step, STEER_NAMES.length);
+                        Settings.putNative(c, Settings.K_STEER, steer);
+                        releaseAll();
+                        build();
+                        updateTilt();
+                    }
+                    return STEER_NAMES[steer];
+                case 2: {
+                    int s = Settings.tiltSens(c);
+                    if (step != 0) {
+                        s = Math.max(1, Math.min(10, s + step));
+                        Settings.putNative(c, Settings.K_TILT_SENS, s);
+                        fullLockSin = (float) Math.sin(Math.toRadians(Settings.tiltAngle(s)));
+                    }
+                    return String.valueOf(s);
+                }
+                case 3:
+                    if (step != 0) {
+                        opacity[mode] = clamp(round1(opacity[mode] + step * STEP), OPA_MIN, 1f);
+                        touchPrefs.edit().putFloat("m" + mode + "_opacity", opacity[mode]).apply();
+                        invalidate();
+                    }
+                    return Math.round(opacity[mode] * 100) + "%";
+                case 4: {
+                    if (step != 0) {
+                        resize(step * STEP);
+                        SharedPreferences.Editor ed = touchPrefs.edit();
+                        for (Control k : controls) {
+                            if (!k.shown()) continue;
+                            String key = "m" + mode + "_" + k.id;
+                            ed.putFloat(key + "_x", k.px[mode]).putFloat(key + "_y", k.py[mode])
+                              .putFloat(key + "_s", k.ps[mode]);
+                        }
+                        ed.apply();
+                        invalidate();
+                    }
+                    float sum = 0; int n = 0;
+                    for (Control k : controls) if (k.shown()) { sum += k.scale; n++; }
+                    return Math.round(n == 0 ? 100 : sum / n * 100) + "%";
+                }
+                default:
+                    return "";
+            }
+        } catch (java.io.IOException e) {
+            android.util.Log.w("nfsmw", "cannot save a control setting: " + e.getMessage());
+            return "";
+        }
     }
 
     // ------------------------------------------------------------------ utils

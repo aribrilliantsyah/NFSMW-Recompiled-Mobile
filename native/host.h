@@ -30,6 +30,10 @@ void WindowPixels(int& w, int& h);
 std::filesystem::path LauncherGameDir();
 // the game's rumble on the phone (GameActivity.rumble), for port 0 with no controller; 0 to 65535 per motor
 void PhoneRumble(uint16_t left, uint16_t right);
+// the in-game settings' CONTROLS rows, which are the overlay's (GameActivity.settingsRow): row 0 mode, 1 steering,
+// 2 tilt sensitivity, 3 opacity, 4 size, 5 the controls' editor, 6 the HUD editor. step != 0 changes the value (opens
+// the editor); the value as shown, empty off Android or when the shell does not answer. Game thread
+std::string ShellRow(int row, int step);
 // the performance overlay's numbers, percent and degrees, -1 where the device does not tell (native/stats.cpp)
 void SamplePerf();
 float CpuLoad();

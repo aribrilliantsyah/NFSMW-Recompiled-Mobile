@@ -121,12 +121,15 @@ void ApplyHudLayout() {
     g_moved.swap(seen);  // a package gone forgets its objects
 }
 
+void SettingsTick(X86Context& ctx);  // settings_menu.cpp: the ☰'s request opens once a menu is up
+
 }  // namespace game
 
 // FEngine::Update (thiscall, the time and a flag, ret 8): HUD's code has written its places by then (Hud_Minimap
-// scrolls TRACK_MAP each frame), the drawing reads them after
+// scrolls TRACK_MAP each frame), the drawing reads them after; the settings switch packages after it, between updates
 X86_EXTERN_FUNC(__imp__sub_00165B20);
 X86_FUNC(sub_00165B20) {
     __imp__sub_00165B20(ctx, base);
     game::ApplyHudLayout();
+    game::SettingsTick(ctx);
 }

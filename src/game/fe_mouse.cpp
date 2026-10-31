@@ -27,6 +27,9 @@ namespace dispatch {
 uint32_t HostThunk(X86Func* fn);  // sdk/runtime/cpu/dispatch.cpp
 }
 
+// settings_menu.cpp: the settings rows' touch handling, each GetMouseInfo
+namespace game { void SettingsMenuTick(X86Context& ctx); }
+
 namespace game {
 
 namespace {
@@ -115,6 +118,7 @@ void GetMouseInfo(X86Context& ctx, uint8_t*) {
     kernel::W16(info + 2, uint16_t(here ? int16_t(g_y.load()) : kAway));
     kernel::W16(info + 4, 0);
     kernel::W16(info + 6, down ? 1 : 0);  // FEMouse_Left
+    SettingsMenuTick(ctx);
     kernel::Return(ctx, 0, 1);
 }
 
@@ -302,6 +306,7 @@ void FeFrame() {
 }
 
 bool FeMenuShown() { return g_menu; }
+uint32_t FeMenuPackage() { return g_package; }
 bool FeMouseDown() { return g_reported_down; }
 bool FeFinger(float& x, float& y) {
     x = float(g_x), y = float(g_y);

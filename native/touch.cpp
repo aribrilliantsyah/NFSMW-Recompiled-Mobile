@@ -24,6 +24,7 @@
 #include "common/fe_mouse.h"
 #include "common/keys.h"
 #include "common/options.h"
+#include "common/settings_menu.h"
 #include "host.h"
 
 namespace input {
@@ -274,6 +275,7 @@ std::vector<Finger> g_fingers;
 float g_rstick_x = 0, g_rstick_y = 0;  // -1 to 1, y up
 std::atomic<uint64_t> g_back_until{0};  // the back key's tap of Start or B lasts until then
 constexpr uint64_t kBackTapMs = 120;
+uint64_t g_pause_until = 0;  // the settings' pause (Apply, under g_lock)
 
 float Width() {
     int w, h;
@@ -500,6 +502,12 @@ void Apply(input::Pad& pad) {
         used = true;
         if (p < kBit) pad.analog[p] = 0xFF;
         else pad.buttons |= uint16_t(1u << (p - kBit));
+    }
+    // the ☰'s settings in a race: START first, the pause menu they open over (src/game/settings_menu.cpp)
+    if (game::SettingsTakePause()) g_pause_until = NowMs() + kBackTapMs;
+    if (NowMs() < g_pause_until) {
+        used = true;
+        pad.buttons |= uint16_t(1u << 4);  // Start
     }
     if (NowMs() < g_back_until) {
         used = true;
