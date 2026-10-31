@@ -214,19 +214,71 @@ final class Settings {
 
     /** The overlay's mode, steering and tilt from the settings file (the in-game overlay, the editor); the file is
      *  anyone's to edit, and the overlay indexes its per-mode arrays with these, so an unknown value is the default. */
-    static int padMode(Context c) {
-        return oneOf(nativeSettings(c).getInt(K_PAD_MODE, MODE_MOBILE), new int[] {MODE_XBOX, MODE_MOBILE},
-                     MODE_MOBILE);
+    static int padMode(Context c) { return padMode(nativeSettings(c)); }
+
+    static int padMode(TomlSettings t) {
+        return oneOf(t.getInt(K_PAD_MODE, MODE_MOBILE), new int[] {MODE_XBOX, MODE_MOBILE}, MODE_MOBILE);
     }
 
     static boolean widescreen(Context c) { return nativeSettings(c).getBool(K_WIDESCREEN, true); }
 
-    static int steer(Context c) {
-        return oneOf(nativeSettings(c).getInt(K_STEER, STEER_STICK),
+    static int steer(Context c) { return steer(nativeSettings(c)); }
+
+    static int steer(TomlSettings t) {
+        return oneOf(t.getInt(K_STEER, STEER_STICK),
                      new int[] {STEER_STICK, STEER_ARROWS, STEER_TILT, STEER_WHEEL}, STEER_STICK);
     }
 
-    static int tiltSens(Context c) { return within(nativeSettings(c).getInt(K_TILT_SENS, 5), 1, 10, 5); }
+    static int tiltSens(Context c) { return tiltSens(nativeSettings(c)); }
+
+    static int tiltSens(TomlSettings t) { return within(t.getInt(K_TILT_SENS, 5), 1, 10, 5); }
+
+    // The overlay's steps, made on the file as it is now (inside updateNative's locked change): a value the launcher
+    // or the game wrote since the overlay last read it is what the step starts from, never put back. Each returns the
+    // value written.
+
+    /** The other mode. */
+    static int nextPadMode(TomlSettings t) {
+        int m = padMode(t) == MODE_XBOX ? MODE_MOBILE : MODE_XBOX;
+        t.put(K_PAD_MODE, m);
+        return m;
+    }
+
+    static int stepSteer(TomlSettings t, int step) {
+        int s = Math.floorMod(steer(t) + step, 4);
+        t.put(K_STEER, s);
+        return s;
+    }
+
+    static int stepTiltSens(TomlSettings t, int step) {
+        int s = Math.max(1, Math.min(10, tiltSens(t) + step));
+        t.put(K_TILT_SENS, s);
+        return s;
+    }
+
+    /** A step of a mode's opacity (legacy: touchOpacity's) or size. */
+    static int stepTouchLook(TomlSettings t, int mode, boolean opacity, int step, int legacy) {
+        int pct = opacity ? stepTouchOpacity(touchOpacity(t, mode, legacy), step)
+                          : stepTouchSize(touchSize(t, mode), step);
+        t.put(opacity ? touchOpacityKey(mode) : touchSizeKey(mode), pct);
+        return pct;
+    }
+
+    /** The editor's opacity edits of a mode, in order: +1 or -1 a step, 0 its RESET (the default). */
+    static int replayOpacity(int base, java.util.List<Integer> edits) {
+        int pct = base;
+        for (int e : edits) pct = e == 0 ? TOUCH_OPACITY_DEF : stepTouchOpacity(pct, e);
+        return pct;
+    }
+
+    /** The editor's DONE: each mode the editor changed the opacity of, its edits replayed on the file's value now;
+     *  a mode with none is left as the file has it (another editor's change kept). legacy per mode as touchOpacity. */
+    static void applyOpacityEdits(TomlSettings t, java.util.List<Integer>[] edits, int[] legacy) {
+        for (int m = 0; m < edits.length; m++) {
+            if (edits[m].isEmpty()) continue;
+            t.put(touchOpacityKey(m), replayOpacity(touchOpacity(t, m, legacy[m]), edits[m]));
+        }
+    }
 
     // the overlay's look per mode (0 XBOX, 1 MOBILE), percent: the CONTROLS rows Opacity and Size, launcher and game.
     // In the settings file, not the touch preferences: those are cached per process and the game is its own process

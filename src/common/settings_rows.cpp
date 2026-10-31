@@ -7,7 +7,7 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
-#include <fstream>
+#include <functional>
 #include <iterator>
 #include <optional>
 #include <string>
@@ -21,7 +21,8 @@
 #include "common/aspect.h"
 #include "common/menu.h"
 #include "common/options.h"
-#include "common/settings_lock.h"
+#include "common/settings_file.h"
+#include "core/log.h"
 #include "host.h"
 
 namespace app {
@@ -319,23 +320,19 @@ void LoadControlState() {
     } catch (...) {}
 }
 
-void SaveControlKey(const char* key, int value) {
-    auto path = SettingsFile();
-    game::SettingsLock lock(path);
-    if (!lock.ok()) return;
-    toml::table t;
-    try {
-        t = toml::parse_file(path.string());
-    } catch (...) {}
-    t.insert_or_assign(key, int64_t(value));
-    auto tmp = path.string() + ".tmp";
-    {
-        std::ofstream f(tmp);
-        f << t << "\n";
-        if (!f) return;
-    }
-    std::error_code ec;
-    std::filesystem::rename(tmp, path, ec);
+// one key stepped from its value in the file as it is now (fallback the shown one), under its lock
+// (game::UpdateSettingsFile): another editor's newer value is what the step starts from. A broken file is kept as .bad
+// and left as it is, not replaced by this one key. The value as it now is
+int StepControlKey(const char* key, int shown, const std::function<int(int)>& step) {
+    int value = shown;
+    bool ok = game::UpdateSettingsFile(SettingsFile(), [&](toml::table& t, bool broken) {
+        if (broken) return false;
+        value = step(int(t[key].value_or(int64_t(shown))));
+        t.insert_or_assign(key, int64_t(value));
+        return true;
+    });
+    if (!ok) LOGW("settings: %s not saved", key);
+    return ok ? value : shown;
 }
 
 // the slot the launcher's PLAY wrote (save_dir, a slot folder), else the default
@@ -465,14 +462,20 @@ std::string Value(const Row& r, int step) {
             if (r.id == kOpacity || r.id == kSize) return "-";
             LoadControlState();
             if (r.id == kControlMode) {
-                if (step) SaveControlKey("pad_mode", g_controls.pad_mode = StepIndex(g_controls.pad_mode, step, 2));
+                if (step)
+                    g_controls.pad_mode = StepControlKey("pad_mode", g_controls.pad_mode,
+                                                         [&](int v) { return StepIndex(v, step, 2); });
                 return kModeNames[std::clamp(g_controls.pad_mode, 0, 1)];
             }
             if (r.id == kSteering) {
-                if (step) SaveControlKey("steer", g_controls.steer = StepIndex(g_controls.steer, step, 4));
+                if (step)
+                    g_controls.steer = StepControlKey("steer", g_controls.steer,
+                                                      [&](int v) { return StepIndex(v, step, 4); });
                 return kSteerNames[std::clamp(g_controls.steer, 0, 3)];
             }
-            if (step) SaveControlKey("tilt_sens", g_controls.tilt_sens = std::clamp(g_controls.tilt_sens + step, 1, 10));
+            if (step)
+                g_controls.tilt_sens = StepControlKey("tilt_sens", g_controls.tilt_sens,
+                                                      [&](int v) { return std::clamp(v + step, 1, 10); });
             return std::to_string(g_controls.tilt_sens);
         }
         case kEditButtons:

@@ -15,7 +15,6 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
-#include <fstream>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -28,7 +27,7 @@
 #include "app/app.h"
 #include "build_info.h"
 #include "common/aspect.h"
-#include "common/settings_lock.h"
+#include "common/settings_file.h"
 #include "common/settings_menu.h"
 #include "core/input.h"
 #include "core/log.h"
@@ -180,6 +179,8 @@ const char* kModes[] = {"fullscreen", "borderless", "windowed"};
 constexpr int kDefaults = 3;
 // the save slot's folder (save_dir in the settings file, as the launcher writes it on the phone); empty: hdd here
 std::string g_save_dir;
+// our keys as this run last read or wrote them: Save writes only the ones changed since, as native/main.cpp's does
+toml::table g_saved;
 
 std::filesystem::path File() { return ExeDir() / kGame.settings; }
 
@@ -225,12 +226,14 @@ void Load() {
     try {
         t = toml::parse_file(File().string());
     } catch (const toml::parse_error&) {
-        // defaults, the broken file kept beside for the player
+        // defaults, the broken file kept beside for the player; Save compares with them
         std::error_code ec;
         std::filesystem::copy_file(File(), File().string() + ".bad", std::filesystem::copy_options::overwrite_existing,
                                    ec);
+        g_saved = Table();
         return;
     } catch (...) {
+        g_saved = Table();
         return;
     }
     s.render_percent = t["render_percent"].value_or(s.render_percent);
@@ -243,6 +246,7 @@ void Load() {
         else *o.value = t[o.key].value_or(*o.value);
     }
     if (kGame.load) kGame.load(&t);
+    g_saved = Table();
 }
 
 // the hard disk kernel::Boot mounts, as native/main.cpp picks it
@@ -253,43 +257,10 @@ std::filesystem::path SaveRoot() {
     return ExeDir() / "hdd";
 }
 
-// our values into the file's tables, leaf by leaf: a table we write ([keys]) keeps the entries we do not know
-static void Merge(toml::table& into, const toml::table& from) {
-    for (auto&& [key, value] : from) {
-        toml::table* have = into[key].as_table();
-        if (have && value.is_table()) Merge(*have, *value.as_table());
-        else into.insert_or_assign(key, value);
-    }
-}
-
-// the file is the launcher's too: our keys over what it holds ([padmap], save_dir, the overlay's, keys we do not know),
-// through a temporary file so a crash never leaves half of it. One broken since Load is kept as .bad first (as Load
-// does), and left alone if it cannot be
+// the file has other editors (the CONTROLS rows' keys, keys we do not know): only the keys this run changed go in, into
+// the file as it is now, under its lock and through a temporary file, as native/main.cpp's Save
 void Save() {
-    game::SettingsLock lock(File());
-    if (!lock.ok()) return;  // another editor may be writing: no write over it
-    toml::table t;
-    std::error_code ec;
-    // a file we cannot even look at may still be there: not a missing file to write fresh
-    bool exists = std::filesystem::exists(File(), ec);
-    if (ec) return;
-    if (exists) {
-        try {
-            t = toml::parse_file(File().string());
-        } catch (const toml::parse_error&) {
-            std::filesystem::copy_file(File(), File().string() + ".bad",
-                                       std::filesystem::copy_options::overwrite_existing, ec);
-            if (ec) return;
-        }
-    }
-    Merge(t, Table());
-    std::filesystem::path tmp = File().string() + ".tmp";
-    {
-        std::ofstream f(tmp);
-        f << t << "\n";
-        if (!f) return;
-    }
-    std::filesystem::rename(tmp, File(), ec);
+    if (!game::SaveChanged(File(), Table(), g_saved)) LOGW("app: settings not saved");
 }
 
 void LogSettings() {

@@ -653,15 +653,20 @@ public class LauncherActivity extends Activity {
     }
 
     /** Opacity or Size of a mode, percent: mostwanted.toml's (Settings.touchOpacityKey/touchSizeKey), which the
-     *  game's overlay reads too; s steps it. mToml is the file as of the last load or write, reloaded on resume. */
+     *  game's overlay reads too; s steps it, from the file's value as it is now (under its lock), so a step made in
+     *  the game meanwhile is not undone. mToml is the file as of the last load or write, reloaded on resume. */
     private String look(int mode, boolean opacity, int s) {
         int legacy = Math.round(getSharedPreferences("nfsmw_touch", MODE_PRIVATE)
                 .getFloat("m" + mode + "_opacity", Settings.TOUCH_OPACITY_DEF / 100f) * 100);
-        int pct = opacity ? Settings.touchOpacity(mToml, mode, legacy) : Settings.touchSize(mToml, mode);
         if (s != 0) {
-            pct = opacity ? Settings.stepTouchOpacity(pct, s) : Settings.stepTouchSize(pct, s);
-            put(opacity ? Settings.touchOpacityKey(mode) : Settings.touchSizeKey(mode), pct);
+            try {
+                mToml = Settings.updateNative(this, t -> Settings.stepTouchLook(t, mode, opacity, s, legacy));
+            } catch (IOException e) {
+                Toast.makeText(this, "Cannot save settings: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
+            mTomlStamp = Settings.nativeFile(this).lastModified();
         }
+        int pct = opacity ? Settings.touchOpacity(mToml, mode, legacy) : Settings.touchSize(mToml, mode);
         return pct + "%";
     }
 
@@ -800,11 +805,15 @@ public class LauncherActivity extends Activity {
         mTomlStamp = Settings.nativeFile(this).lastModified();
     }
 
-    /** mostwanted.toml as it is now; a broken one leaves defaults and a .bad copy (Settings.nativeSettings). */
+    /** mostwanted.toml as it is now; a broken one leaves defaults and a .bad copy (Settings.nativeSettings). One that
+     *  cannot be read or kept as .bad is left alone: every change is refused (TomlSettings.update) until it can be. */
     private void loadNative() {
         mToml = Settings.nativeSettings(this);
         mTomlStamp = Settings.nativeFile(this).lastModified();
-        if (mToml.recovered())
+        if (mToml.failure() != null)
+            Toast.makeText(this, "mostwanted.toml left as it is, settings not saved: " + mToml.failure().getMessage(),
+                           Toast.LENGTH_LONG).show();
+        else if (mToml.recovered())
             Toast.makeText(this, "mostwanted.toml was unreadable: defaults used, the old file kept as mostwanted.toml.bad",
                            Toast.LENGTH_LONG).show();
     }

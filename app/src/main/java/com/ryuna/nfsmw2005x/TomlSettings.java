@@ -40,32 +40,44 @@ final class TomlSettings {
 
     private final List<Line> lines = new ArrayList<>();
     private boolean recovered;
+    private IOException failure;
 
     private TomlSettings() { }
 
-    /** The file's settings; none when it is missing. An unreadable file is
-     *  copied to <name>.bad and empty settings come back (recovered()). */
+    /** The file's settings; none when it is missing. A file that cannot be parsed is copied to <name>.bad and empty
+     *  settings come back (recovered()). One that cannot be read, or whose .bad copy cannot be made, gives empty
+     *  settings too, to show defaults, but is not safe to write over: failure() holds why, and update() throws it. */
     static TomlSettings load(File f) {
         TomlSettings t = new TomlSettings();
         if (!f.exists()) return t;
+        byte[] bytes;
         try {
-            byte[] bytes = Files.readAllBytes(f.toPath());
-            try {
-                t.parse(new String(bytes, StandardCharsets.UTF_8));
-            } catch (IllegalArgumentException | IndexOutOfBoundsException e) {
-                t.lines.clear();
-                t.recovered = true;
-                Files.write(new File(f.getParentFile(), f.getName() + ".bad").toPath(), bytes);
-            }
+            bytes = Files.readAllBytes(f.toPath());
         } catch (IOException e) {
+            t.recovered = true;
+            t.failure = new IOException("cannot read " + f.getName() + ": " + e.getMessage(), e);
+            return t;
+        }
+        try {
+            t.parse(new String(bytes, StandardCharsets.UTF_8));
+        } catch (IllegalArgumentException | IndexOutOfBoundsException e) {
             t.lines.clear();
             t.recovered = true;
+            try {
+                Files.write(new File(f.getParentFile(), f.getName() + ".bad").toPath(), bytes);
+            } catch (IOException x) {
+                t.failure = new IOException(f.getName() + " is broken and cannot be kept as " + f.getName()
+                        + ".bad: " + x.getMessage(), x);
+            }
         }
         return t;
     }
 
-    /** load found the file broken and fell back to defaults. */
+    /** load found the file broken or unreadable and fell back to defaults. */
     boolean recovered() { return recovered; }
+
+    /** Why the file must not be written over (unreadable, or broken with no .bad copy), else null. */
+    IOException failure() { return failure; }
 
     boolean has(String key) { return find(key) != null; }
 
@@ -126,6 +138,8 @@ final class TomlSettings {
         try (java.io.RandomAccessFile r = new java.io.RandomAccessFile(lock, "rw");
              java.nio.channels.FileLock held = r.getChannel().lock()) {
             TomlSettings t = load(f);
+            // defaults over a file that could not be read or kept: the original stays as it is
+            if (t.failure != null) throw t.failure;
             change.accept(t);
             t.save(f);
             return t;

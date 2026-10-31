@@ -18,7 +18,6 @@
 #include <ctime>
 #include <cwchar>
 #include <filesystem>
-#include <fstream>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -30,7 +29,7 @@
 #include "app/app.h"
 #include "build_info.h"
 #include "common/aspect.h"
-#include "common/settings_lock.h"
+#include "common/settings_file.h"
 #include "common/translations.h"
 #include "core/input.h"
 #include "core/log.h"
@@ -139,11 +138,15 @@ const char* kModes[] = {"fullscreen", "borderless", "windowed"};
 // the defaults a settings file was written under: 3 has the frame rate capped at 60 and vsync off, which a file from
 // before takes once, its player's own choices kept from then on. The launcher writes 3
 constexpr int kDefaults = 3;
-// the game folder the launcher picked (Settings.gameDir), its key game_dir in the settings file
+// the game folder the launcher picked (Settings.gameDir), its key game_dir in the settings file; the launcher's key,
+// never written here
 std::string g_game_dir;
 // the active save slot's folder (SaveSlots: <game folder>/saves/<slot>), save_dir in the settings file; the launcher's
-// key, never written here (Save keeps it)
+// key, never written here
 std::string g_save_dir;
+// our keys as this run last read or wrote them: Save writes only the ones changed since (game::SaveChanged), so a
+// value the launcher wrote meanwhile (the game left in the background) is not put back
+toml::table g_saved;
 
 std::filesystem::path File() { return ExeDir() / kGame.settings; }
 
@@ -157,7 +160,6 @@ toml::table Table() {
                   {"vsync", s.vsync},
                   {"anisotropic_filtering", int64_t(s.aniso)},
                   {"join_ip", s.join_ip},
-                  {"game_dir", g_game_dir},
                   {"defaults", int64_t(kDefaults)}};
     for (const Option& o : kGame.options) {
         if (o.flag) t.insert(o.key, *o.flag);
@@ -197,12 +199,15 @@ void Load() {
     try {
         t = toml::parse_file(File().string());
     } catch (const toml::parse_error&) {
-        // defaults, the broken file kept beside for the player (the launcher says so too)
+        // defaults, the broken file kept beside for the player (the launcher says so too); they are what Save
+        // compares with, so it writes only what the player changes
         std::error_code ec;
         std::filesystem::copy_file(File(), File().string() + ".bad", std::filesystem::copy_options::overwrite_existing,
                                    ec);
+        g_saved = Table();
         return;
     } catch (...) {
+        g_saved = Table();
         return;
     }
     std::string mode = t["display_mode"].value_or(std::string(kModes[uint32_t(s.display_mode)]));
@@ -223,6 +228,10 @@ void Load() {
         else *o.value = t[o.key].value_or(*o.value);
     }
     if (kGame.load) kGame.load(&t);
+    g_saved = Table();
+    // the phone's frame defaults taken from a file before them: the next Save writes them with the file's mark
+    if (t["defaults"].value_or(int64_t(0)) < kDefaults)
+        for (const char* key : {"defaults", "fps_cap", "vsync"}) g_saved.erase(key);
 }
 
 const std::string& GameDirSetting() { return g_game_dir; }
@@ -236,43 +245,12 @@ std::filesystem::path SaveRoot() {
     return ExeDir() / "hdd";
 }
 
-// our values into the file's tables, leaf by leaf: a table we write ([keys]) keeps the entries we do not know
-static void Merge(toml::table& into, const toml::table& from) {
-    for (auto&& [key, value] : from) {
-        toml::table* have = into[key].as_table();
-        if (have && value.is_table()) Merge(*have, *value.as_table());
-        else into.insert_or_assign(key, value);
-    }
-}
-
-// the file is the launcher's too: our keys over what it holds ([padmap], save_dir, the overlay's, keys we do not know),
-// through a temporary file so a crash or the launcher never reads half of it. One broken since Load is kept as .bad
-// first (as Load does), and left alone if it cannot be
+// the file is the launcher's too ([padmap], game_dir, save_dir, the overlay's, keys we do not know, and the launcher's
+// own edits of ours while the game sat in the background): only the keys this run changed go in, into the file as it
+// is now, under its lock and through a temporary file (game::SaveChanged). A broken one is kept as .bad first, and
+// left alone if it cannot be
 void Save() {
-    game::SettingsLock lock(File());
-    if (!lock.ok()) return;  // another editor may be writing: no write over it
-    toml::table t;
-    std::error_code ec;
-    // a file we cannot even look at may still be there: not a missing file to write fresh
-    bool exists = std::filesystem::exists(File(), ec);
-    if (ec) return;
-    if (exists) {
-        try {
-            t = toml::parse_file(File().string());
-        } catch (const toml::parse_error&) {
-            std::filesystem::copy_file(File(), File().string() + ".bad",
-                                       std::filesystem::copy_options::overwrite_existing, ec);
-            if (ec) return;
-        }
-    }
-    Merge(t, Table());
-    std::filesystem::path tmp = File().string() + ".tmp";
-    {
-        std::ofstream f(tmp);
-        f << t << "\n";
-        if (!f) return;
-    }
-    std::filesystem::rename(tmp, File(), ec);
+    if (!game::SaveChanged(File(), Table(), g_saved)) LOGW("app: settings not saved");
 }
 
 void LogSettings() {

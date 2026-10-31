@@ -251,4 +251,107 @@ public class TomlSettingsTest {
         assertTrue("waited " + waited + " ms", waited >= 500);
         assertFalse(TomlSettings.load(f).getBool("bloom", true));
     }
+
+    /** A broken file whose .bad copy cannot be made (a directory in the way) is left as it is: update throws and
+     *  never writes defaults over it. */
+    @Test
+    public void brokenFileWithNoBackupIsNotReplaced() throws Exception {
+        File f = new File(tmp.getRoot(), "mostwanted.toml");
+        byte[] broken = "widescreen = = true\nkeep = 1\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(f.toPath(), broken);
+        assertTrue(new File(tmp.getRoot(), "mostwanted.toml.bad").mkdir());
+        TomlSettings t = TomlSettings.load(f);
+        assertTrue(t.recovered());
+        assertTrue(t.failure() != null);
+        try {
+            TomlSettings.update(f, u -> u.put("bloom", false));
+            org.junit.Assert.fail("update wrote over a file it could not keep");
+        } catch (java.io.IOException expected) {
+            // the original stays
+        }
+        assertArrayEquals(broken, Files.readAllBytes(f.toPath()));
+    }
+
+    /** A file that cannot be read is not replaced either. */
+    @Test
+    public void unreadableFileIsNotReplaced() throws Exception {
+        File f = new File(tmp.getRoot(), "mostwanted.toml");
+        byte[] good = "keep = 1\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(f.toPath(), good);
+        org.junit.Assume.assumeTrue(f.setReadable(false) && !f.canRead());  // root reads anything
+        try {
+            TomlSettings t = TomlSettings.load(f);
+            assertTrue(t.failure() != null);
+            try {
+                TomlSettings.update(f, u -> u.put("bloom", false));
+                org.junit.Assert.fail("update wrote over an unreadable file");
+            } catch (java.io.IOException expected) {
+                // the original stays
+            }
+        } finally {
+            f.setReadable(true);
+        }
+        assertArrayEquals(good, Files.readAllBytes(f.toPath()));
+    }
+
+    /** A broken file that can be kept as .bad is still recovered (defaults written, the old one beside). */
+    @Test
+    public void brokenFileWithBackupIsRecovered() throws Exception {
+        File f = new File(tmp.getRoot(), "mostwanted.toml");
+        Files.write(f.toPath(), "widescreen = = true\n".getBytes(StandardCharsets.UTF_8));
+        TomlSettings.update(f, u -> u.put("bloom", false));
+        assertFalse(TomlSettings.load(f).getBool("bloom", true));
+        assertTrue(new File(tmp.getRoot(), "mostwanted.toml.bad").isFile());
+    }
+
+    /** The editor's DONE: only the modes whose opacity it changed are written, each replayed on the file's value now;
+     *  a mode it did not touch keeps what another editor wrote meanwhile. */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void editorWritesOnlyChangedOpacityModes() throws Exception {
+        File f = new File(tmp.getRoot(), "mostwanted.toml");
+        Files.write(f.toPath(), "touch_opacity_0 = 70\ntouch_opacity_1 = 70\n".getBytes(StandardCharsets.UTF_8));
+        // the editor opened at 70/70 and stepped MOBILE (1) down once; meanwhile the game set XBOX (0) to 40 and
+        // MOBILE to 90
+        java.util.List<Integer>[] edits = new java.util.List[] {new java.util.ArrayList<Integer>(),
+                new java.util.ArrayList<Integer>(java.util.Arrays.asList(-1))};
+        TomlSettings.update(f, t -> { t.put("touch_opacity_0", 40); t.put("touch_opacity_1", 90); });
+        TomlSettings.update(f, t -> Settings.applyOpacityEdits(t, edits, new int[] {70, 70}));
+        TomlSettings r = TomlSettings.load(f);
+        assertEquals(40, r.getInt("touch_opacity_0", -1));   // untouched mode: the other editor's value
+        assertEquals(80, r.getInt("touch_opacity_1", -1));   // the step made on the file's 90
+
+        // RESET then a step up: the default plus one
+        assertEquals(80, Settings.replayOpacity(30, java.util.Arrays.asList(-1, 0, 1)));
+        // no edits at all: nothing written, not even a key the file lacks
+        File g = new File(tmp.getRoot(), "g.toml");
+        java.util.List<Integer>[] none = new java.util.List[] {new java.util.ArrayList<Integer>(),
+                new java.util.ArrayList<Integer>()};
+        TomlSettings.update(g, t -> Settings.applyOpacityEdits(t, none, new int[] {70, 70}));
+        assertFalse(TomlSettings.load(g).has("touch_opacity_0"));
+        assertFalse(TomlSettings.load(g).has("touch_opacity_1"));
+    }
+
+    /** The overlay's and launcher's steps start from the file's value under the lock, not a copy read earlier. */
+    @Test
+    public void controlStepsStartFromTheFile() throws Exception {
+        File f = new File(tmp.getRoot(), "mostwanted.toml");
+        Files.write(f.toPath(), "pad_mode = 1\nsteer = 0\ntilt_sens = 5\ntouch_size_1 = 100\n"
+                .getBytes(StandardCharsets.UTF_8));
+        TomlSettings early = TomlSettings.load(f);  // the overlay's copy as it started
+        // the launcher, meanwhile
+        TomlSettings.update(f, t -> { t.put("pad_mode", 0); t.put("steer", 3); t.put("tilt_sens", 9);
+                                      t.put("touch_size_1", 150); });
+        assertEquals(Settings.MODE_MOBILE, Settings.padMode(early));
+        TomlSettings now = TomlSettings.update(f, t -> {
+            Settings.nextPadMode(t);
+            Settings.stepSteer(t, 1);
+            Settings.stepTiltSens(t, 3);
+            Settings.stepTouchLook(t, 1, false, 1, 70);
+        });
+        assertEquals(Settings.MODE_MOBILE, Settings.padMode(now));      // from 0, not from the stale 1
+        assertEquals(Settings.STEER_STICK, Settings.steer(now));        // 3 + 1 wraps to 0
+        assertEquals(10, Settings.tiltSens(now));                       // 9 + 3, kept in range
+        assertEquals(160, Settings.touchSize(now, 1));                  // 150 + 10
+    }
 }
