@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -95,8 +96,7 @@ constexpr float kTitleEnd = 53.0f;
 constexpr uint32_t kVideoFlags = 0x48099C;
 // mouse/touch
 constexpr uint32_t kTestForIntersection = 0x10CF20;
-constexpr uint32_t kWidgetLeft = 0x4C, kWidgetRight = 0x50, kObjectScript = 0x54, kScriptId = 0x30;
-constexpr uint32_t kArrowPressed = 0xE647B375;
+constexpr uint32_t kWidgetLeft = 0x4C, kWidgetRight = 0x50;
 constexpr uint32_t kMouseStates = 0xAC, kMouseStateSize = 0x10, kGetPosition = 0xEA7E0;
 constexpr uint32_t kPackageMouseCount = 0xB0;
 constexpr uint32_t kStringBuffer = 0x64, kStringRoom = 0x68, kStringReserve = 0x15D680;
@@ -426,9 +426,19 @@ void Step(X86Context& ctx, uint32_t widget, uint32_t message) {
 
 // ---- mouse/touch ----
 
-uint32_t g_pending = 0;
-int g_pending_updates = 0;
-constexpr int kPendingUpdates = 6;
+uint64_t TouchNowMs() {
+    using namespace std::chrono;
+    return uint64_t(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+}
+
+// FEng's mouse clicks our rows' arrows too, but its click is a step of the row the cursor is on (the console's screens
+// dropped the PC's code that moved the cursor first), its release after a swipe clicks whatever arrow the finger left
+// on, and touch.cpp's swipes come as dpad Left/Right: so in our rows a step from the pad's Left/Right counts only with
+// no finger about, and a touch is ours alone (TapRows): an arrow tapped steps its own row, a label or value tapped
+// moves the cursor to it, a swipe (the finger moved) steps nothing
+constexpr float kTapSlop = 12.0f;        // FEng units (480 high) a tap's finger may move
+constexpr uint64_t kFingerQuietMs = 900;  // after a lift: touch.cpp's queued swipe steps (6 at most, 120 ms each)
+uint64_t g_finger_at = 0;                // the finger was last down then (game thread)
 
 bool LiveWidgets(X86Context& ctx, uint32_t& current, uint32_t* package = nullptr) {
     uint32_t screen = g_window.screen;
@@ -445,41 +455,19 @@ bool LiveWidgets(X86Context& ctx, uint32_t& current, uint32_t* package = nullptr
     return true;
 }
 
-bool ArrowPressed(uint32_t widget) {
-    for (uint32_t field : {kWidgetLeft, kWidgetRight})
-        if (Peek(Peek(Peek(widget + field) + kObjectScript) + kScriptId) == kArrowPressed) return true;
-    return false;
+bool Hits(X86Context& ctx, float x, float y, uint32_t object) {
+    return object && (CallGuest(ctx, kTestForIntersection, {Bits(x), Bits(y), object}) & 0xFF);
 }
 
-uint32_t PressedRow(X86Context& ctx, uint32_t& current) {
-    current = 0;
-    if (!LiveWidgets(ctx, current)) return 0;
-    for (uint32_t widget : g_window.widgets)
-        if (Peek(widget) == g_widget_vtable && kernel::G<uint8_t>(widget + kWidgetEnabled) && ArrowPressed(widget))
-            return widget;
-    return 0;
-}
-
-void FocusTouchedRow(X86Context& ctx) {
-    uint32_t current;
-    uint32_t pressed = PressedRow(ctx, current);
-    if (pressed && pressed != current) {
-        CallThis(ctx, g_window.screen, kSetCurrent, {pressed});
-        current = pressed;  // the arrow's click steps the row it is on, not the one the cursor left
-    }
-    if (!g_pending || (!pressed && ++g_pending_updates < kPendingUpdates)) return;
-    uint32_t message = g_pending;
-    g_pending = 0;
-    if (current) Step(ctx, current, message);
-}
-
+// an object's offset from its own place to where FEng's mouse tests it: the left arrow's mouse state's place (+4, +8)
+// less its own (FEng's states hold the arrows; the row's group is placed so)
 bool GroupOffset(X86Context& ctx, uint32_t package, float& ox, float& oy) {
     uint32_t states = Peek(package + kMouseStates), count = Peek(package + kPackageMouseCount);
     for (uint32_t i = 0; states && i < count && i < 256; i++) {
         uint32_t entry = states + i * kMouseStateSize, object = Peek(entry);
         if (!object) continue;
         for (uint32_t widget : g_window.widgets) {
-            if (object != Peek(widget + kWidgetLeft) && object != Peek(widget + kWidgetRight)) continue;
+            if (object != Peek(widget + kWidgetLeft)) continue;
             uint32_t s = Scratch();
             CallGuest(ctx, kGetPosition, {object, s, s + 4});
             ox = F32(entry + 4) - F32(s);
@@ -490,19 +478,37 @@ bool GroupOffset(X86Context& ctx, uint32_t package, float& ox, float& oy) {
     return false;
 }
 
-bool Hits(X86Context& ctx, float x, float y, uint32_t object) {
-    return object && (CallGuest(ctx, kTestForIntersection, {Bits(x), Bits(y), object}) & 0xFF);
+float PlaceX(X86Context& ctx, uint32_t object) {
+    uint32_t s = Scratch();
+    CallGuest(ctx, kGetPosition, {object, s, s + 4});
+    return F32(s);
 }
 
-uint32_t RowAt(X86Context& ctx, float x, float y) {
+// the row under the point and the part of it hit: -1 its left arrow, 1 its right, 0 its title or value. The left
+// arrow, title and value are tested as FEng's mouse tests them; the right arrow by the row's mirror: on the phone its
+// mouse box lay off the arrow drawn (a tap on it hit no object of the row, FEng's own click did nothing either), the
+// arrows drawn as far either side of the value (622, 730, 836 on a 1170 wide shot). A row is the band its left arrow or
+// value covers
+uint32_t RowAt(X86Context& ctx, float x, float y, int* part = nullptr) {
     uint32_t current, package;
     float ox, oy;
     if (!LiveWidgets(ctx, current, &package) || !GroupOffset(ctx, package, ox, oy)) return 0;
-    x -= ox; y -= oy;
+    x -= ox, y -= oy;
     for (uint32_t widget : g_window.widgets) {
         if (Peek(widget) != g_widget_vtable || !kernel::G<uint8_t>(widget + kWidgetEnabled)) continue;
-        for (uint32_t field : {kWidgetTitle, kWidgetValue, kWidgetLeft, kWidgetRight})
-            if (Hits(ctx, x, y, Peek(widget + field))) return widget;
+        uint32_t left = Peek(widget + kWidgetLeft), value = Peek(widget + kWidgetValue);
+        int which = 2;
+        if (Hits(ctx, x, y, left)) which = -1;
+        else if (Hits(ctx, x, y, Peek(widget + kWidgetTitle)) || Hits(ctx, x, y, value)) which = 0;
+        float lx = left ? PlaceX(ctx, left) : 0, vx = value ? PlaceX(ctx, value) : 0;
+        if (which == 0 && left && value && x > vx + (vx - lx) * 0.5f) which = 1;
+        if (which == 2 && left && value && vx > lx && (Hits(ctx, lx, y, left) || Hits(ctx, vx, y, value)) &&
+            x > vx + (vx - lx) * 0.5f &&
+            x < 2 * vx - lx + (vx - lx) * 0.5f)
+            which = 1;  // the right arrow's place
+        if (which == 2) continue;
+        if (part) *part = which;
+        return widget;
     }
     return 0;
 }
@@ -515,38 +521,48 @@ bool OpenRow(X86Context& ctx, uint32_t widget) {
     return true;
 }
 
-uint32_t g_tap_row = 0;
-bool g_finger_was_down = false;
-float g_finger_x = 0, g_finger_y = 0;
+bool g_finger_was_down = false, g_finger_moved = false;
+float g_down_x = 0, g_down_y = 0, g_up_x = 0, g_up_y = 0;
 
+// a touch ended on our rows: an arrow tapped steps its own row, a title or value tapped moves the cursor to it (or
+// opens an action row), a swipe (the finger moved) steps nothing. Seen at each GetMouseInfo: a touch shorter than an
+// update is not seen down here, and steps nothing (FEng's click of it is a finger's, which WidgetAct leaves)
 void TapRows(X86Context& ctx) {
     float x, y;
     bool down = FeFinger(x, y);
-    if (down) g_finger_x = x, g_finger_y = y;
-    if (down && !g_finger_was_down) g_tap_row = RowAt(ctx, x, y);
+    if (down) {
+        g_finger_at = TouchNowMs();
+        if (!g_finger_was_down) g_down_x = x, g_down_y = y, g_finger_moved = false;
+        else if (std::fabs(x - g_down_x) > kTapSlop || std::fabs(y - g_down_y) > kTapSlop) g_finger_moved = true;
+        g_up_x = x, g_up_y = y;
+    }
     bool lifted = !down && g_finger_was_down;
     g_finger_was_down = down;
-    if (!lifted || !g_tap_row) return;
-    uint32_t widget = g_tap_row;
-    g_tap_row = 0;
+    if (!lifted || g_finger_moved) return;
+    g_finger_at = TouchNowMs();
     uint32_t current;
-    if (RowAt(ctx, g_finger_x, g_finger_y) != widget || !LiveWidgets(ctx, current)) return;
+    int part = 0, part_down = 0;
+    uint32_t widget = RowAt(ctx, g_up_x, g_up_y, &part);
+    if (!widget || RowAt(ctx, g_down_x, g_down_y, &part_down) != widget || part != part_down ||
+        !LiveWidgets(ctx, current))
+        return;
     if (widget != current) CallThis(ctx, g_window.screen, kSetCurrent, {widget});
-    if (OpenRow(ctx, widget)) FeTakeAccept();
+    if (part) {
+        Step(ctx, widget, part < 0 ? kLeft : kRight);
+        FeTakeAccept();  // a tap on the cursor's row is no A as well
+    } else if (OpenRow(ctx, widget)) {
+        FeTakeAccept();
+    }
 }
 
 void WidgetAct(X86Context& ctx, uint8_t*) {
     uint32_t widget = ctx.ecx, message = R32(ctx.esp + 8);
     uint32_t esp = ctx.esp;
     bool step = message == kLeft || message == kRight;
-    if (step && FeMouseDown()) {
-        g_pending = message;
-        g_pending_updates = 0;
-    } else if (step) {
-        Step(ctx, widget, message);
-    } else if (message == kAccept) {
-        OpenRow(ctx, widget);
-    }
+    float fx, fy;
+    bool finger = FeMouseDown() || FeFinger(fx, fy) || TouchNowMs() - g_finger_at < kFingerQuietMs;
+    if (step && !finger) Step(ctx, widget, message);  // the pad's; a finger's are TapRows'
+    else if (message == kAccept) OpenRow(ctx, widget);
     ctx.esp = esp + 4 + 8;
 }
 
@@ -568,7 +584,7 @@ void AddRows(X86Context& ctx, uint32_t screen, int category) {
         W32(g_widget_vtable + kPositionSlot, dispatch::HostThunk(WidgetPosition));
     }
     g_window = Window{screen, category, {}, 0};
-    g_tap_row = 0;
+    g_finger_was_down = false;  // a touch from the screen before is not this screen's
     const auto& rows = Rows();
     size_t visible = std::max<uint32_t>(R32(screen + kScreenVisible), 1);
     while (g_window.widgets.size() < rows.size() && g_window.widgets.size() < visible &&
@@ -644,10 +660,7 @@ uint64_t g_seen_at = 0;
 bool g_open = false;            // a SETTINGS session (its list or a category screen of ours) is up
 bool g_flag_ours = false;       // OpenRequested set the FEDatabase options flag, not a game's OPTIONS
 
-uint64_t NowMs() {
-    using namespace std::chrono;
-    return uint64_t(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
-}
+uint64_t NowMs() { return TouchNowMs(); }
 
 bool NameIs(uint32_t name, uint32_t want) {
     return name && Peek(name) && kernel::ReadCString(name, 32) == kernel::ReadCString(want, 32);
@@ -746,7 +759,6 @@ void SettingsTick(X86Context& ctx) {
 
 // game thread tick from fe_mouse.cpp's GetMouseInfo: the rows' touches
 void SettingsMenuTick(X86Context& ctx) {
-    FocusTouchedRow(ctx);
     TapRows(ctx);
     TintRows();
 }
@@ -899,4 +911,14 @@ X86_FUNC(sub_000EB160) {
     if (kernel::R32(ctx.esp) == kScreenBack && cat >= 0) g_settings_next = true;
     else if (!g_settings_next && !(cat >= 0 && ScreenPackage(name))) LeaveSettings();
     __imp__sub_000EB160(ctx, base);
+}
+
+// UIOptionsScreen's "nothing changed" test (thiscall, al): its B leaves at once on true (0x1052A6), else asks whether to
+// discard the changes. It compares the screen's category's copy with the options (a switch on categories 0 to 9) and
+// so answers false for ours, whose rows save as they step: nothing to discard, B leaves at once
+X86_EXTERN_FUNC(__imp__sub_000DCE60);
+X86_FUNC(sub_000DCE60) {
+    if (CurrentCategory() < 0) return __imp__sub_000DCE60(ctx, base);
+    ctx.eax = (ctx.eax & ~0xFFu) | 1;
+    ctx.esp += 4;
 }
