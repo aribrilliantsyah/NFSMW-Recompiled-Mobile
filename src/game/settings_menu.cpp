@@ -622,15 +622,15 @@ constexpr uint32_t kFlags = 0x12C, kFlagOptions = 0x10;
 std::atomic<int> g_request{kNoRequest};
 std::atomic<uint64_t> g_request_at{0};
 std::atomic<bool> g_pause_sent{false};  // START once a request: a second would resume the race
+bool g_flag_ours = false;  // OpenRequested set the FEDatabase options flag, not a game's OPTIONS
 
 uint64_t NowMs() {
     using namespace std::chrono;
     return uint64_t(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
 }
 
-// the menu up is one of the options' own packages: the settings are open, or the game's options are
-bool InOptions(uint32_t package) {
-    uint32_t name = Peek(package + 0xC);
+// a package name (guest string) of the options' own: the game's options or SETTINGS, their screens
+bool OptionsPackage(uint32_t name) {
     if (!name || !Peek(name)) return false;
     std::string text = kernel::ReadCString(name, 32);
     for (uint32_t own : {kOptionsFng, kPauseOptionsFng, kPauseMainFng, kMainMenuSubFng})
@@ -638,10 +638,22 @@ bool InOptions(uint32_t package) {
     return false;
 }
 
+// the menu up is one of the options' own packages: the settings are open, or the game's options are
+bool InOptions(uint32_t package) { return OptionsPackage(Peek(package + 0xC)); }
+
+// SETTINGS left for another package: the next UIOptionsMain is the game's, and the options flag ours goes
+void LeaveSettings() {
+    g_settings_next = false;
+    if (!g_flag_ours) return;
+    g_flag_ours = false;
+    if (uint32_t db = R32(kFEDatabase)) W32(db + kFlags, R32(db + kFlags) & ~kFlagOptions);
+}
+
 void OpenRequested(X86Context& ctx, int category) {
     uint32_t db = R32(kFEDatabase);
     if (!db || !R32(db + 0x10)) return;
     bool pause = Racing();
+    g_flag_ours = !(R32(db + kFlags) & kFlagOptions);
     W32(db + kFlags, R32(db + kFlags) | kFlagOptions);
     uint32_t package;
     if (category >= 0 && category < settings::kCount) {
@@ -825,10 +837,15 @@ X86_FUNC(sub_000EE570) {
     ctx.esp += 4 + 4;
 }
 
-// SwitchPackage: leaving a category screen goes back to SETTINGS
+// SwitchPackage (name, arg, 0, 0), thiscall: an options screen of ours leaving for the options (0x105479) comes back
+// to SETTINGS' icons. Any other package than the options' own ends SETTINGS: the next UIOptionsMain is the game's,
+// and the FEDatabase options flag the ☰ set (OpenRequested) goes, else the main menu's next Accept fade still reads
+// it (0x1169A6) and opens the options in place of the item picked (Quick Race opened SETTINGS)
 X86_EXTERN_FUNC(__imp__sub_000EB160);
 X86_FUNC(sub_000EB160) {
+    uint32_t name = kernel::R32(ctx.esp + 4);
     int cat = kernel::R32(ctx.esp) == kScreenBack ? CurrentCategory() : -1;
     if (cat >= 0 && cat < settings::kCount) g_settings_next = true;
+    else if (!OptionsPackage(name)) LeaveSettings();
     __imp__sub_000EB160(ctx, base);
 }
