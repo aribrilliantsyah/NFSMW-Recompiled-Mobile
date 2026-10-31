@@ -198,8 +198,10 @@ public class LauncherActivity extends Activity {
         mSlotList = ui.column();
         c.addView(mSlotList);
         LinearLayout row = new LinearLayout(this);
-        row.addView(ui.secondary("New slot", v -> askName("New slot", "", n -> job("Slot " + n.trim() + " created",
-                () -> slots().create(n)))), new LinearLayout.LayoutParams(0, -2, 1f));
+        row.addView(ui.secondary("New slot", v -> askName("New slot", "", n -> {
+            SaveSlots slots = slots();
+            job("Slot " + n.trim() + " created", () -> slots.create(n));
+        })), new LinearLayout.LayoutParams(0, -2, 1f));
         row.addView(ui.gap(8));
         row.addView(ui.secondary("Restore backup…", v -> pickRestore()), new LinearLayout.LayoutParams(0, -2, 1f));
         c.addView(row);
@@ -255,24 +257,31 @@ public class LauncherActivity extends Activity {
                         refreshSaves();
                         break;
                     case 1:
-                        askName("Copy of " + name, name + " copy", n -> job("Copied into " + n.trim(),
-                                () -> slots().duplicate(name, n)));
+                        askName("Copy of " + name, name + " copy", n -> {
+                            SaveSlots slots = slots();
+                            job("Copied into " + n.trim(), () -> slots.duplicate(name, n));
+                        });
                         break;
                     case 2:
                         if (refuseWhileGame()) return;
-                        askName("Rename " + name, name, n -> job("Renamed to " + n.trim(), () -> {
-                            slots().rename(name, n);
-                            if (name.equals(Settings.saveSlot(this)))
-                                mPrefs.edit().putString(Settings.K_SAVE_SLOT, n.trim()).apply();
-                        }));
+                        askName("Rename " + name, name, n -> {
+                            // the folder the slot is in, fixed now: the job may run after another is chosen
+                            String game = Settings.gameDir(this);
+                            SaveSlots slots = slots();
+                            job("Renamed to " + n.trim(), () -> {
+                                slots.rename(name, n);
+                                if (game.equals(Settings.gameDir(this)) && name.equals(Settings.saveSlot(this)))
+                                    mPrefs.edit().putString(Settings.K_SAVE_SLOT, n.trim()).apply();
+                            });
+                        });
                         break;
                     case 3:
                         if (refuseWhileGame()) return;
+                        SaveSlots slots = slots();
                         new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                             .setTitle("Delete " + name + "?")
                             .setMessage("Its saves are gone for good unless you have a backup.")
-                            .setPositiveButton("Delete", (d2, w2) -> job("Deleted " + name,
-                                    () -> slots().delete(name)))
+                            .setPositiveButton("Delete", (d2, w2) -> job("Deleted " + name, () -> slots.delete(name)))
                             .setNegativeButton("Cancel", null)
                             .show();
                         break;
@@ -670,6 +679,13 @@ public class LauncherActivity extends Activity {
     private void saveDir(String d) {
         d = d.trim();
         while (d.length() > 1 && d.endsWith("/")) d = d.substring(0, d.length() - 1);
+        // slot work queued or running belongs to the folder it was started in: no other folder until it is done
+        if (sSaveJobs.get() > 0 && !d.equals(Settings.gameDir(this))) {
+            Toast.makeText(this, "Wait for the save slot work to finish before changing the game folder.",
+                           Toast.LENGTH_LONG).show();
+            mDir.setText(Settings.gameDir(this));
+            return;
+        }
         mPrefs.edit().putString(Settings.K_GAME_DIR, d).apply();
         refreshDir();
         refreshSaves();
