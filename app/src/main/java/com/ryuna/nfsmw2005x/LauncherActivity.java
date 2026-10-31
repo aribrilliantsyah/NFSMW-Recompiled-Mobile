@@ -28,10 +28,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * Start screen, laid out like NFSMW-Recompiled-Mobile's SetupActivity: a
- * title, then dark cards -- Game (folder + PLAY), Display, Touch controls
- * (editor, layout, steering, tilt, vibration), Controller (mapping),
- * Graphics, Sound, Advanced (collapsed). Landscape: two columns of cards.
+ * Start screen: a title, the GAME card (folder, ISO install, PLAY) on the left and on the right the tabs SCREEN,
+ * SPEED, VISUALS, CONTROLS, SYSTEM, CHEATS (the in-game settings menu's categories, src/common/settings_rows.cpp, with
+ * their rows in the same order and names) and SAVES.
  */
 public class LauncherActivity extends Activity {
     private static final int REQ_TREE = 1, REQ_ISO = 2, REQ_BACKUP = 3, REQ_RESTORE = 4;
@@ -45,6 +44,12 @@ public class LauncherActivity extends Activity {
     private View mPlay;
     private android.widget.Button mIsoBtn, mIsoSmall;
     private TextView mPlayHint;
+    /** The tabs: the in-game menu's categories (settings::Name) in its order, then the launcher's SAVES. */
+    private static final String[] TABS = {"SCREEN", "SPEED", "VISUALS", "CONTROLS", "SYSTEM", "CHEATS", "SAVES"};
+    private static final int T_SCREEN = 0, T_SPEED = 1, T_VISUALS = 2, T_CONTROLS = 3, T_SYSTEM = 4, T_CHEATS = 5,
+            T_SAVES = 6;
+    private int mTab;
+    private LinearLayout mTabBar, mTabBody, mPresetRow;
     private volatile boolean mCancelExtract;
     private LinearLayout mSlotList;
     // the slot (and the game folder it is in) whose backup the document picker is naming: kept over the launcher
@@ -62,6 +67,7 @@ public class LauncherActivity extends Activity {
         if (b != null) {
             mBackupSlot = b.getString("backup_slot");
             mBackupGame = b.getString("backup_game");
+            mTab = Math.max(0, Math.min(TABS.length - 1, b.getInt("tab", 0)));
         }
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
         mPrefs = Settings.prefs(this);
@@ -82,6 +88,7 @@ public class LauncherActivity extends Activity {
         super.onSaveInstanceState(out);
         out.putString("backup_slot", mBackupSlot);
         out.putString("backup_game", mBackupGame);
+        out.putInt("tab", mTab);
     }
 
     @Override
@@ -116,29 +123,173 @@ public class LauncherActivity extends Activity {
         page.addView(ui.summary("You need your own copy of the game (the Xbox disc image, .iso). This app contains no game data."));
         page.addView(ui.gap(10));
 
+        // the GAME card beside the tabs, which get the wider side for their seven labels
         LinearLayout cols = new LinearLayout(this);
         LinearLayout left = ui.column(), right = ui.column();
         cols.addView(left, new LinearLayout.LayoutParams(0, -2, 1f));
         cols.addView(ui.gap(10));
-        cols.addView(right, new LinearLayout.LayoutParams(0, -2, 1f));
+        cols.addView(right, new LinearLayout.LayoutParams(0, -2, 1.45f));
         page.addView(cols);
 
         left.addView(gameCard());
-        left.addView(savesCard());
-        left.addView(touchCard());
-        left.addView(controllerCard());
-        left.addView(gameplayCard());
-        left.addView(cheatsCard());
-        right.addView(displayCard());
-        right.addView(graphicsCard());
-        right.addView(soundCard());
-        right.addView(advancedCard());
+        mTabBar = new LinearLayout(this);
+        right.addView(mTabBar, new LinearLayout.LayoutParams(-1, -2));
+        right.addView(ui.gap(8));
+        mTabBody = ui.column();
+        right.addView(mTabBody, new LinearLayout.LayoutParams(-1, -2));
+        showTab(mTab);
 
         ScrollView sv = new ScrollView(this);
         sv.setBackgroundColor(UiKit.BG);
         sv.setFillViewport(true);
         sv.addView(page);
         return sv;
+    }
+
+    // ---------------------------------------------------------------- tabs
+
+    private void showTab(int tab) {
+        mTab = tab;
+        mTabBar.removeAllViews();
+        for (int i = 0; i < TABS.length; i++) {
+            final int t = i;
+            boolean on = i == tab, cheats = i == T_CHEATS;
+            LinearLayout cell = ui.column();
+            cell.setGravity(Gravity.CENTER_HORIZONTAL);
+            cell.setBackground(ui.box(on ? UiKit.PANEL : UiKit.CARD, cheats ? CHEATS_ORANGE : on ? UiKit.ACCENT
+                                                                                             : UiKit.LINE, 8));
+            TextView l = ui.text(TABS[i], 11, cheats ? CHEATS_ORANGE : on ? UiKit.FG : UiKit.DIM);
+            l.setTypeface(Typeface.DEFAULT_BOLD);
+            l.setSingleLine(true);
+            l.setGravity(Gravity.CENTER);
+            l.setPadding(ui.dp(2), ui.dp(9), ui.dp(2), ui.dp(5));
+            cell.addView(l, new LinearLayout.LayoutParams(-1, -2));
+            // the marker under the label: the chosen tab's, and always CHEATS' orange one
+            View mark = new View(this);
+            if (cheats || on) mark.setBackground(ui.box(cheats ? CHEATS_ORANGE : UiKit.ACCENT, 0, 2));
+            LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(ui.dp(on ? 28 : 16), ui.dp(3));
+            ml.bottomMargin = ui.dp(5);
+            cell.addView(mark, ml);
+            cell.setOnClickListener(v -> showTab(t));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+            if (i > 0) lp.leftMargin = ui.dp(4);
+            mTabBar.addView(cell, lp);
+        }
+        mTabBody.removeAllViews();
+        mPresetRow = null;
+        mPadStatus = null;
+        mSlotList = null;
+        switch (tab) {
+            case T_SCREEN: mTabBody.addView(screenCard()); break;
+            case T_SPEED: mTabBody.addView(speedCard()); break;
+            case T_VISUALS: mTabBody.addView(visualsCard()); break;
+            case T_CONTROLS: mTabBody.addView(controlsCard()); break;
+            case T_SYSTEM: mTabBody.addView(systemCard()); break;
+            case T_CHEATS: mTabBody.addView(cheatsCard()); break;
+            default: mTabBody.addView(savesCard());
+        }
+        refreshPads();
+    }
+
+    /** A category's card: the in-game menu's grey border and its name. */
+    private LinearLayout category(String name) {
+        LinearLayout c = ui.card();
+        c.setBackground(ui.box(UiKit.CARD, CATEGORY_GREY, 14));
+        c.addView(ui.section(name));
+        return c;
+    }
+
+    static final int CATEGORY_GREY = 0xFF9AA0A6;
+
+    private LinearLayout screenCard() {
+        LinearLayout c = category("SCREEN");
+        c.addView(ui.toggle("Widescreen", "On: the whole screen, the game's widescreen mode widened to the phone (Hor+). "
+                + "Off: the Xbox's 4:3 picture with side bars.",
+                flag(Settings.K_WIDESCREEN, true), v -> put(Settings.K_WIDESCREEN, v)));
+        c.addView(ui.choice("Aspect ratio", "The picture's shape with widescreen on; Full screen is the phone's.",
+                new String[] {"Full screen", "1:1", "5:4", "4:3", "3:2", "16:10", "16:9", "18:9", "19.5:9", "20:9",
+                              "21:9"},
+                new int[] {0, 100, 125, 133, 150, 160, 178, 200, 217, 222, 233},
+                num(Settings.K_ASPECT, 0), v -> put(Settings.K_ASPECT, v)));
+        c.addView(ui.choice("Render resolution", "Of the screen's height. 67% is about 720p on a 1080p phone.",
+                new String[] {"25%", "33%", "50%", "67%", "75%", "100%", "125%", "150%", "200%"},
+                new int[] {25, 33, 50, 67, 75, 100, 125, 150, 200},
+                num(Settings.K_RENDER, 67), v -> put(Settings.K_RENDER, v)));
+        c.addView(ui.choice("Screen filter", null,
+                new String[] {"Off", "Sharpen", "Vivid", "Scanlines", "CRT", "HDR"}, new int[] {0, 1, 2, 3, 4, 5},
+                num(Settings.K_FILTER, 0), v -> put(Settings.K_FILTER, v)));
+        c.addView(ui.toggle("Yellow filter", "The game's yellow colour grading. Off: neutral colours.",
+                flag(Settings.K_YELLOW, false), v -> put(Settings.K_YELLOW, v)));
+        return c;
+    }
+
+    private LinearLayout speedCard() {
+        LinearLayout c = category("SPEED");
+        mPresetRow = ui.column();
+        c.addView(mPresetRow);
+        refreshPreset();
+        c.addView(ui.choice("FPS cap", "60 is the console's speed for menus and films.",
+                new String[] {"30", "60", "75", "90", "120", "144", "165", "240", "360", "Refresh rate", "Unlimited"},
+                new int[] {30, 60, 75, 90, 120, 144, 165, 240, 360, 1, 0},
+                num(Settings.K_FPS_CAP, 60), v -> put(Settings.K_FPS_CAP, v)));
+        c.addView(ui.toggle("V-Sync", "Waits for the screen's refresh: no tearing, a little more latency.",
+                flag(Settings.K_VSYNC, false), v -> put(Settings.K_VSYNC, v)));
+        c.addView(ui.toggle("FPS counter", "Frames per second in a corner of the game.",
+                flag(Settings.K_FPS, false), v -> put(Settings.K_FPS, v)));
+        c.addView(ui.choice("Counter position", null,
+                new String[] {"Top center", "Top left", "Top right", "Bottom left", "Bottom center", "Bottom right"},
+                new int[] {0, 1, 2, 3, 4, 5}, num(Settings.K_FPS_POS, 2), v -> put(Settings.K_FPS_POS, v)));
+        c.addView(ui.toggle("CPU/GPU usage", "On the FPS counter.", flag(Settings.K_FPS_USAGE, true),
+                v -> put(Settings.K_FPS_USAGE, v)));
+        c.addView(ui.toggle("Temperatures", "On the FPS counter.", flag(Settings.K_FPS_TEMPS, true),
+                v -> put(Settings.K_FPS_TEMPS, v)));
+        c.addView(ui.toggle("Shader preloading (next start)", "Builds the shaders of earlier runs at the start: fewer "
+                + "stutters the first minutes.", flag(Settings.K_PRELOAD, false), v -> put(Settings.K_PRELOAD, v)));
+        // the launcher's own: not in the game's menu
+        c.addView(ui.toggle("Performance log", "A line a second in Android/data/com.ryuna.nfsmw2005x/files/logs: fps, "
+                + "CPU and GPU frame times.",
+                mPrefs.getBoolean(Settings.K_PERF_LOG, false), v -> pref(Settings.K_PERF_LOG, v)));
+        return c;
+    }
+
+    /** The Preset row as the file is now: Custom unless every key it covers is one preset's. */
+    private void refreshPreset() {
+        if (mPresetRow == null) return;
+        mPresetRow.removeAllViews();
+        int p = Presets.detect(mToml);
+        mPresetRow.addView(ui.segmented("Preset", "Sets the SPEED and VISUALS rows and the render resolution. Now: "
+                        + Presets.NAMES[p] + ".",
+                new String[] {Presets.NAMES[Presets.SAVER], Presets.NAMES[Presets.BALANCED], Presets.NAMES[Presets.MAX]},
+                new int[] {Presets.SAVER, Presets.BALANCED, Presets.MAX}, p, v -> {
+                    update(t -> Presets.apply(t, v));
+                    showTab(mTab);          // every row it set, shown again
+                }));
+    }
+
+    private LinearLayout visualsCard() {
+        LinearLayout c = category("VISUALS");
+        c.addView(ui.toggle("Bloom", null, flag(Settings.K_BLOOM, true), v -> put(Settings.K_BLOOM, v)));
+        c.addView(ui.toggle("Fog", null, flag(Settings.K_FOG, true), v -> put(Settings.K_FOG, v)));
+        c.addView(ui.toggle("Motion blur", "The blur by speed and the nitrous' radial blur.",
+                flag(Settings.K_MOTION_BLUR, true), v -> put(Settings.K_MOTION_BLUR, v)));
+        c.addView(ui.choice("Car reflections", "How often the cars' reflection is drawn; about 3% of the GPU's frame.",
+                new String[] {"Full", "Half", "Quarter", "Off"}, new int[] {0, 1, 2, 3},
+                num(Settings.K_REFLECT, 0), v -> put(Settings.K_REFLECT, v)));
+        c.addView(ui.toggle("Road reflections", "The wet road's reflection.",
+                flag(Settings.K_ROAD_REFLECT, true), v -> put(Settings.K_ROAD_REFLECT, v)));
+        c.addView(ui.toggle("Shadows", null, flag(Settings.K_SHADOWS, true), v -> put(Settings.K_SHADOWS, v)));
+        c.addView(ui.toggle("Particles", "Tyre smoke, sparks, crash debris.",
+                flag(Settings.K_PARTICLES, true), v -> put(Settings.K_PARTICLES, v)));
+        c.addView(ui.toggle("Falling rain", null, flag(Settings.K_RAIN, true), v -> put(Settings.K_RAIN, v)));
+        c.addView(ui.toggle("Screen raindrops", null, flag(Settings.K_RAIN_DROPS, true),
+                v -> put(Settings.K_RAIN_DROPS, v)));
+        c.addView(ui.choice("Anti-aliasing", "FXAA: a filter over the picture. SSAA: twice the height, much slower.",
+                new String[] {"Off", "FXAA", "SSAA 2x"}, new int[] {0, 1, 2},
+                num(Settings.K_AA, 0), v -> put(Settings.K_AA, v)));
+        c.addView(ui.choice("Anisotropic filtering", "Sharper textures seen at an angle, like the road ahead.",
+                new String[] {"Game default", "2x", "4x", "8x", "16x"}, new int[] {0, 2, 4, 8, 16},
+                num(Settings.K_ANISO, 0), v -> put(Settings.K_ANISO, v)));
+        return c;
     }
 
     private LinearLayout gameCard() {
@@ -453,21 +604,17 @@ public class LauncherActivity extends Activity {
         }
     }
 
-    private LinearLayout touchCard() {
-        LinearLayout c = ui.card();
-        c.addView(ui.section("TOUCH CONTROLS"));
-        c.addView(ui.summary("Move the touch buttons and change their size and opacity, for each layout. "
-                + "In the game: the ⚙ next to HIDE/TOUCH opens the same editor."));
-        c.addView(ui.gap(6));
-        c.addView(ui.secondary("Edit touch controls", v -> startActivity(new Intent(this, EditorActivity.class))));
-        c.addView(ui.gap(6));
-        c.addView(ui.secondary("Edit HUD position", v -> startActivity(new Intent(this, HudEditorActivity.class))));
-        c.addView(ui.toggle("On-screen controller", null, mPrefs.getBoolean(Settings.K_PAD, true),
-                v -> pref(Settings.K_PAD, v)));
-        c.addView(ui.segmented("Control mode", "MOBILE: steering, pedals, nitrous, e-brake, Speedbreaker; in the game's menus, its buttons. XBOX: the whole Xbox controller.",
+    private LinearLayout controlsCard() {
+        LinearLayout c = category("CONTROLS");
+        c.addView(ui.segmented("Control mode", "MOBILE: steering, pedals, nitrous, e-brake, Speedbreaker; in the game's "
+                + "menus, its buttons. XBOX: the whole Xbox controller.",
                 new String[] {"MOBILE", "XBOX"}, new int[] {Settings.MODE_MOBILE, Settings.MODE_XBOX},
-                num(Settings.K_PAD_MODE, Settings.MODE_MOBILE), v -> put(Settings.K_PAD_MODE, v)));
-        c.addView(ui.segmented("Steering (MOBILE)", "Stick: analog. Arrows: two big buttons. Wheel: drag round the wheel. Tilt: turn the phone like a wheel.",
+                num(Settings.K_PAD_MODE, Settings.MODE_MOBILE), v -> {
+                    put(Settings.K_PAD_MODE, v);
+                    showTab(mTab);          // Opacity and Size are the mode's
+                }));
+        c.addView(ui.segmented("Steering", "MOBILE. Stick: analog. Arrows: two big buttons. Wheel: drag round the "
+                + "wheel. Tilt: turn the phone like a wheel.",
                 new String[] {"Stick", "Arrows", "Wheel", "Tilt"},
                 new int[] {Settings.STEER_STICK, Settings.STEER_ARROWS, Settings.STEER_WHEEL, Settings.STEER_TILT},
                 num(Settings.K_STEER, Settings.STEER_STICK), v -> put(Settings.K_STEER, v)));
@@ -475,19 +622,26 @@ public class LauncherActivity extends Activity {
                 1, 10, num(Settings.K_TILT_SENS, 5),
                 s -> s + " · full lock at " + Math.round(Settings.tiltAngle(s)) + "°",
                 v -> put(Settings.K_TILT_SENS, v)));
-        c.addView(ui.toggle("Hide with a controller", "Touch controls go away while a physical controller is used; touch the screen to bring them back.",
+        String mode = num(Settings.K_PAD_MODE, Settings.MODE_MOBILE) == Settings.MODE_XBOX ? "XBOX" : "MOBILE";
+        c.addView(ui.stepper("Opacity", "Of the " + mode + " layout's buttons.", s -> overlayRow(3, s)));
+        c.addView(ui.stepper("Size", "Every button of the " + mode + " layout.", s -> overlayRow(4, s)));
+        c.addView(ui.gap(6));
+        c.addView(ui.secondary("Edit buttons", v -> startActivity(new Intent(this, EditorActivity.class))));
+        c.addView(ui.gap(6));
+        c.addView(ui.secondary("Edit HUD", v -> startActivity(new Intent(this, HudEditorActivity.class))));
+        // the launcher's own: not in the game's menu
+        c.addView(ui.toggle("On-screen controller", null, mPrefs.getBoolean(Settings.K_PAD, true),
+                v -> pref(Settings.K_PAD, v)));
+        c.addView(ui.toggle("Hide with a controller", "Touch controls go away while a physical controller is used; "
+                + "touch the screen to bring them back.",
                 mPrefs.getBoolean(Settings.K_PAD_AUTOHIDE, true), v -> pref(Settings.K_PAD_AUTOHIDE, v)));
         c.addView(ui.toggle("Button feedback", "A short tick when a touch button is pressed.",
                 mPrefs.getBoolean(Settings.K_HAPTIC, true), v -> pref(Settings.K_HAPTIC, v)));
-        c.addView(ui.toggle("Vibration", "Crashes and takedowns rumble the controller; with none connected, the phone vibrates.",
-                mPrefs.getBoolean(Settings.K_VIBRATE, true), v -> pref(Settings.K_VIBRATE, v)));
+        c.addView(ui.toggle("Vibration", "Crashes and takedowns rumble the controller; with none connected, the phone "
+                + "vibrates.", mPrefs.getBoolean(Settings.K_VIBRATE, true), v -> pref(Settings.K_VIBRATE, v)));
         c.addView(ui.secondary("Test vibration", v -> testVibration()));
-        return c;
-    }
-
-    private LinearLayout controllerCard() {
-        LinearLayout c = ui.card();
-        c.addView(ui.section("CONTROLLER"));
+        c.addView(ui.gap(10));
+        c.addView(ui.text("Controller", 15, UiKit.FG));
         mPadStatus = ui.summary("");
         c.addView(mPadStatus);
         c.addView(ui.gap(6));
@@ -495,16 +649,42 @@ public class LauncherActivity extends Activity {
         return c;
     }
 
-    private LinearLayout gameplayCard() {
-        LinearLayout c = ui.card();
-        c.addView(ui.section("GAMEPLAY"));
-        c.addView(ui.segmented("Language", "The recompilation's own text and prompts. Indonesian also translates the game's menus.",
-                new String[] {"English", "Indonesia"}, new int[] {0, 1},
+    /** The overlay's Opacity (3) and Size (4) rows, TouchControllerView.settingsRow, the in-game rows' code: an
+     *  editor's view laid out on the screen in landscape (its places are fractions of it), stepped and saved there. */
+    private String overlayRow(int row, int step) {
+        android.graphics.Rect b = getWindowManager().getMaximumWindowMetrics().getBounds();
+        int w = Math.max(b.width(), b.height()), h = Math.min(b.width(), b.height());
+        TouchControllerView v = new TouchControllerView(this, () -> { });
+        v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                  View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
+        v.layout(0, 0, w, h);
+        return v.settingsRow(row, step);
+    }
+
+    private LinearLayout systemCard() {
+        LinearLayout c = category("SYSTEM");
+        c.addView(ui.segmented("Language (next start)", "The recompilation's own text and prompts. Indonesian also "
+                + "translates the game's menus.",
+                new String[] {"English", "Indonesian"}, new int[] {0, 1},
                 "ind".equals(mToml.getString(Settings.K_LANGUAGE, "int")) ? 1 : 0,
                 v -> put(Settings.K_LANGUAGE, v == 1 ? "ind" : "int")));
-        c.addView(ui.toggle("Skip movies", "The intro and the game's videos end as they start (the engine's cutscenes still play).",
-                flag(Settings.K_SKIP_MOVIES, false), v -> put(Settings.K_SKIP_MOVIES, v)));
+        c.addView(ui.choice("Audio output (next start)", null,
+                new String[] {"Automatic", "Mono", "2.0 stereo", "5.1 surround"},
+                new int[] {0, 3, 1, 2}, num(Settings.K_AUDIO_OUT, 0), v -> put(Settings.K_AUDIO_OUT, v)));
+        c.addView(ui.toggle("Skip movies", "The intro and the game's videos end as they start (the engine's cutscenes "
+                + "still play).", flag(Settings.K_SKIP_MOVIES, false), v -> put(Settings.K_SKIP_MOVIES, v)));
+        c.addView(ui.row("Active save slot", "Chosen in SAVES; read-only in the game.",
+                value(Settings.saveSlot(this))));
+        c.addView(ui.row("About", "Xbox static recompilation of NFS Most Wanted (Black Edition).",
+                value("nfsmw " + versionName())));
         return c;
+    }
+
+    private TextView value(String s) {
+        TextView t = ui.text(s, 14, UiKit.ACCENT);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setGravity(Gravity.END);
+        return t;
     }
 
     static final int CHEATS_ORANGE = 0xFFF28C1C;
@@ -591,91 +771,6 @@ public class LauncherActivity extends Activity {
         }
     }
 
-    private LinearLayout displayCard() {
-        LinearLayout c = ui.card();
-        c.addView(ui.section("DISPLAY"));
-        c.addView(ui.toggle("Widescreen", "On: the whole screen, the game's widescreen mode widened to the phone (Hor+). "
-                + "Off: the Xbox's 4:3 picture with side bars.",
-                flag(Settings.K_WIDESCREEN, true), v -> put(Settings.K_WIDESCREEN, v)));
-        c.addView(ui.choice("Max frame rate", "60 is the console's speed for menus and films.",
-                new String[] {"30", "60", "90", "120", "Refresh rate", "Unlimited"}, new int[] {30, 60, 90, 120, 1, 0},
-                num(Settings.K_FPS_CAP, 60), v -> put(Settings.K_FPS_CAP, v)));
-        c.addView(ui.toggle("Vertical sync", "Waits for the screen's refresh: no tearing, a little more latency.",
-                flag(Settings.K_VSYNC, false), v -> put(Settings.K_VSYNC, v)));
-        c.addView(ui.toggle("Show FPS", "Frames per second in a corner of the game.",
-                flag(Settings.K_FPS, false), v -> put(Settings.K_FPS, v)));
-        c.addView(ui.choice("FPS position", null,
-                new String[] {"Top", "Top left", "Top right", "Bottom left", "Bottom", "Bottom right"},
-                new int[] {0, 1, 2, 3, 4, 5}, num(Settings.K_FPS_POS, 2), v -> put(Settings.K_FPS_POS, v)));
-        c.addView(ui.toggle("FPS: CPU / GPU load", null, flag(Settings.K_FPS_USAGE, true),
-                v -> put(Settings.K_FPS_USAGE, v)));
-        c.addView(ui.toggle("FPS: temperatures", null, flag(Settings.K_FPS_TEMPS, true),
-                v -> put(Settings.K_FPS_TEMPS, v)));
-        return c;
-    }
-
-    private LinearLayout graphicsCard() {
-        LinearLayout c = ui.card();
-        c.addView(ui.section("GRAPHICS"));
-        c.addView(ui.slider("Render resolution", "Of the screen's height. 67% is about 720p on a 1080p phone.",
-                20, 200, num(Settings.K_RENDER, 67), v -> v + " %", v -> put(Settings.K_RENDER, v)));
-        c.addView(ui.choice("Anti-aliasing", "FXAA: a filter over the picture. SSAA: twice the height, much slower.",
-                new String[] {"Off", "FXAA", "SSAA 2x"}, new int[] {0, 1, 2},
-                num(Settings.K_AA, 0), v -> put(Settings.K_AA, v)));
-        c.addView(ui.choice("Anisotropic filtering", "Sharper textures seen at an angle, like the road ahead.",
-                new String[] {"Game default", "2x", "4x", "8x", "16x"}, new int[] {0, 2, 4, 8, 16},
-                num(Settings.K_ANISO, 0), v -> put(Settings.K_ANISO, v)));
-        c.addView(ui.toggle("Yellow filter", "The game's yellow colour grading. Off: neutral colours.",
-                flag(Settings.K_YELLOW, false), v -> put(Settings.K_YELLOW, v)));
-        c.addView(ui.choice("Car reflections", "How often the cars' reflection is drawn; about 3% of the GPU's frame.",
-                new String[] {"Full", "Half", "Quarter", "Off"}, new int[] {0, 1, 2, 3},
-                num(Settings.K_REFLECT, 0), v -> put(Settings.K_REFLECT, v)));
-        c.addView(ui.toggle("Road reflections", "The wet road's reflection.",
-                flag(Settings.K_ROAD_REFLECT, true), v -> put(Settings.K_ROAD_REFLECT, v)));
-        c.addView(ui.toggle("Motion blur", "The blur by speed and the nitrous' radial blur.",
-                flag(Settings.K_MOTION_BLUR, true), v -> put(Settings.K_MOTION_BLUR, v)));
-        c.addView(ui.toggle("Bloom", null, flag(Settings.K_BLOOM, true), v -> put(Settings.K_BLOOM, v)));
-        c.addView(ui.toggle("Fog", null, flag(Settings.K_FOG, true), v -> put(Settings.K_FOG, v)));
-        c.addView(ui.toggle("Shadows", null, flag(Settings.K_SHADOWS, true), v -> put(Settings.K_SHADOWS, v)));
-        c.addView(ui.toggle("Particle effects", "Tyre smoke, sparks, crash debris.",
-                flag(Settings.K_PARTICLES, true), v -> put(Settings.K_PARTICLES, v)));
-        c.addView(ui.toggle("Falling rain", null, flag(Settings.K_RAIN, true), v -> put(Settings.K_RAIN, v)));
-        c.addView(ui.toggle("Screen raindrops", null, flag(Settings.K_RAIN_DROPS, true),
-                v -> put(Settings.K_RAIN_DROPS, v)));
-        c.addView(ui.choice("Screen filter", null,
-                new String[] {"Off", "Sharpen", "Vivid", "Scanlines", "CRT", "HDR"}, new int[] {0, 1, 2, 3, 4, 5},
-                num(Settings.K_FILTER, 0), v -> put(Settings.K_FILTER, v)));
-        return c;
-    }
-
-    private LinearLayout soundCard() {
-        LinearLayout c = ui.card();
-        c.addView(ui.section("SOUND"));
-        c.addView(ui.choice("Audio output", null, new String[] {"Automatic", "Stereo", "5.1 surround", "Mono"},
-                new int[] {0, 1, 2, 3}, num(Settings.K_AUDIO_OUT, 0), v -> put(Settings.K_AUDIO_OUT, v)));
-        return c;
-    }
-
-    private LinearLayout advancedCard() {
-        LinearLayout c = ui.card();
-        TextView head = ui.section("▸ ADVANCED");
-        c.addView(head);
-        LinearLayout body = ui.column();
-        body.setVisibility(View.GONE);
-        body.addView(ui.summary("To test what each thing costs on your phone. The defaults are the recommended ones."));
-        body.addView(ui.toggle("Shader preloading", "Builds the shaders of earlier runs at the start: fewer stutters the first minutes.",
-                flag(Settings.K_PRELOAD, false), v -> put(Settings.K_PRELOAD, v)));
-        body.addView(ui.toggle("Performance log", "A line a second in Android/data/com.ryuna.nfsmw2005x/files/logs: fps, CPU and GPU frame times.",
-                mPrefs.getBoolean(Settings.K_PERF_LOG, false), v -> pref(Settings.K_PERF_LOG, v)));
-        c.addView(body);
-        head.setOnClickListener(v -> {
-            boolean open = body.getVisibility() != View.VISIBLE;
-            body.setVisibility(open ? View.VISIBLE : View.GONE);
-            head.setText(open ? "▾ ADVANCED" : "▸ ADVANCED");
-        });
-        return c;
-    }
-
     // ---------------------------------------------------------------- actions
 
     /** The launcher's own state (not the game's). */
@@ -687,9 +782,14 @@ public class LauncherActivity extends Activity {
 
     /** A setting of the game's, into mostwanted.toml at once, so the game's menu starts from it. */
     private void put(String k, Object v) {
-        mToml.put(k, v);
+        update(t -> t.put(k, v));
+        if (Presets.covers(k)) refreshPreset();   // a row changed by hand: the preset it was in, or Custom
+    }
+
+    private void update(java.util.function.Consumer<TomlSettings> change) {
+        change.accept(mToml);
         try {
-            mToml = Settings.updateNative(this, t -> t.put(k, v));  // the file's other keys as they are now
+            mToml = Settings.updateNative(this, change);  // the file's other keys as they are now
         } catch (IOException e) {
             Toast.makeText(this, "Cannot save settings: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }

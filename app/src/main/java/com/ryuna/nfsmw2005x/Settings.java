@@ -40,6 +40,7 @@ final class Settings {
     static final String K_FPS_USAGE = "fps_usage";
     static final String K_FPS_TEMPS = "fps_temps";
     static final String K_WIDESCREEN = "widescreen";
+    static final String K_ASPECT = "aspect_ratio";    // hundredths (133 4:3), 0 the whole screen; common/aspect.h
     static final String K_FPS_CAP = "fps_cap";        // 0 unlimited, 1 refresh rate, else the cap
     static final String K_VSYNC = "vsync";
     // Graphics
@@ -170,7 +171,7 @@ final class Settings {
         {K_RENDER, K_RENDER, 67}, {K_FPS_CAP, K_FPS_CAP, 60}, {K_VSYNC, K_VSYNC, false},
         {K_ANISO, "aniso2", 0}, {K_FPS, "show_fps", false}, {K_FPS_POS, K_FPS_POS, 2},
         {K_FPS_USAGE, K_FPS_USAGE, true}, {K_FPS_TEMPS, K_FPS_TEMPS, true}, {K_WIDESCREEN, K_WIDESCREEN, true},
-        {"aspect_ratio", null, 0}, {K_AA, K_AA, 0}, {K_FILTER, K_FILTER, 0}, {K_YELLOW, K_YELLOW, false},
+        {K_ASPECT, null, 0}, {K_AA, K_AA, 0}, {K_FILTER, K_FILTER, 0}, {K_YELLOW, K_YELLOW, false},
         {K_REFLECT, K_REFLECT, 0}, {K_ROAD_REFLECT, K_ROAD_REFLECT, true}, {K_MOTION_BLUR, K_MOTION_BLUR, true},
         {K_BLOOM, K_BLOOM, true}, {K_FOG, K_FOG, true}, {K_SHADOWS, K_SHADOWS, true},
         {K_PARTICLES, K_PARTICLES, true}, {K_RAIN, K_RAIN, true}, {K_RAIN_DROPS, K_RAIN_DROPS, true},

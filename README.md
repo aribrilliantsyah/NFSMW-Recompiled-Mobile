@@ -24,32 +24,38 @@ The game's x86 code is statically recompiled ahead of time to C++ with [XboxXBE-
 2. Open **NFS Most Wanted** and tap **INSTALL FROM ISO…**: pick the Xbox disc image (`.iso`). It is extracted once into `Android/data/com.ryuna.nfsmw2005x/files/game` (about 2.9 GB); the `.iso` can be deleted afterwards. A folder extracted on a PC (`default.xbe` with the disc's `NFS` folder beside it) works too: **Choose folder…** (asks for all files access).
 3. Tap **PLAY**.
 
-The launcher writes the engine's settings (`mostwanted.toml`) and the HUD layout (`layout.toml`) in `Android/data/com.ryuna.nfsmw2005x/files` at each PLAY; the shader cache and the logs (`logs`) are there too. Saves are slots in the game folder (`game/saves/<slot>`, `Main` by default), managed in the launcher's SAVES card: back them up to a .zip before uninstalling, as Android removes `Android/data` with the app.
+The settings (`mostwanted.toml`, shared by the launcher and the game) and the HUD layout (`layout.toml`, written at each PLAY) are in `Android/data/com.ryuna.nfsmw2005x/files`; the shader cache and the logs (`logs`) are there too. Saves: see [Saves](#saves).
 
 The supported disc is the USA Black Edition (`default.xbe` SHA-1 `f636a16af04171089f879a4bed646e185c734233`).
 
 ## Features
-Every setting is in the launcher. In the game, the ☰ button (it shows with HIDE/TOUCH after a touch) resumes, opens the touch layout editor or goes back to the launcher. Android's back button is the controller's Start in a race (the pause menu) and B in the menus.
+Settings are in the launcher's tabs and in the game: **SETTINGS**, beside OPTIONS in the main menu and the pause menu, has the same categories with the same rows, names and order, and a change in one shows in the other. In the game, the ☰ button (it shows with HIDE/TOUCH after a touch) resumes, opens the touch layout editor or goes back to the launcher. Android's back button is the controller's Start in a race (the pause menu) and B in the menus. **Background Pause**: the game and its sound pause while the app is in the background.
 
-### Graphics
-- **Widescreen**: on, the whole screen, the 3D view widened to the phone's shape (Hor+) and the menus and HUD laid out for it; off, the Xbox's 4:3 picture with side bars.
-- **Render Resolution**: 20% to 200% of the screen's height, instead of the original 640x480.
-- **V-Sync**, **Max Frame Rate** (30 to 120, the display's refresh rate or unlimited) and an **FPS Counter** with CPU / GPU load and temperatures.
-- **Anisotropic Filtering**, **Anti-Aliasing** (FXAA, SSAA 2x) and **Screen Filters**.
-- **Yellow filter** (the game's colour grading, off by default), car and road reflections, motion blur, bloom, fog, shadows, particles, rain and screen raindrops, shader preloading.
+## Controls
+Launcher tab **CONTROLS**, and the game's CONTROLS category.
+- **Control mode**: **MOBILE** (steering, gas and brake pedals, nitrous, e-brake, speedbreaker, a gear lever; in the game's menus, their buttons as icons) or **XBOX** (the whole Xbox controller).
+- **Steering** (MOBILE): Stick, Arrows, Wheel (drag round it) or Tilt (turn the phone), with **Tilt sensitivity**.
+- **Opacity** and **Size** of the current layout's buttons.
+- **Edit buttons**: move, resize and fade each control (also the ⚙ next to HIDE/TOUCH in the game). **Edit HUD**: moves the speedometer, the minimap, the race information and the EA Trax banner.
+- In the game's menus a tap on the highlighted item is A and a swipe steps through the list; the keyboard takes taps.
+- Launcher only: on-screen controller, hide with a controller, button feedback, vibration (with a test).
+- **Controller**: any controller SDL3 supports, with rumble (the phone vibrates without one), each Xbox button remappable (**Controller mapping**). The touch controls hide while a controller is in use. **Keyboard** too.
 
-### Touch Controls
-Two layouts, **MOBILE** (steering by stick, arrows, a wheel or tilting the phone, gas and brake pedals, nitrous, e-brake, speedbreaker, a gear lever; in the game's menus, their buttons as icons) and **XBOX** (the whole Xbox controller), each edited in the launcher or in the game: move, resize and fade the controls. **Edit HUD position** moves the speedometer, the minimap, the race information and the EA Trax banner. In the game's menus a tap on the highlighted item is A and a swipe steps through the list.
+## Settings
+| Tab | Rows |
+|---|---|
+| SCREEN | Widescreen (Hor+ on the phone's shape; off, the Xbox's 4:3 with side bars), Aspect ratio, Render resolution (25% to 200% of the screen's height), Screen filter (Sharpen, Vivid, Scanlines, CRT, HDR), Yellow filter (the game's colour grading, off by default) |
+| SPEED | Preset (Saver, Balanced, Max), FPS cap (30 to 360, the display's refresh rate or unlimited), V-Sync, FPS counter, Counter position, CPU/GPU usage, Temperatures, Shader preloading; in the launcher, Performance log |
+| VISUALS | Bloom, Fog, Motion blur, Car reflections (full, every 2nd or 4th frame, off), Road reflections, Shadows, Particles, Falling rain, Screen raindrops, Anti-aliasing (FXAA, SSAA 2x), Anisotropic filtering |
+| SYSTEM | Language (English, or Indonesian: the recompilation's text and the game's menus translated), Audio output (automatic, mono, stereo, 5.1), Skip movies, Active save slot, About |
 
-### Other Input
-- **Controller**: any controller SDL3 supports, with rumble (the phone vibrates without one), each Xbox button remappable in the launcher. The touch controls hide while a controller is in use.
-- **Keyboard**.
+A **Preset** sets the SPEED and VISUALS rows and the render resolution at once: **Saver** 50%, 30 fps, no reflections, motion blur or particles; **Balanced** 67%, 60 fps, the cars' reflections every 2nd frame; **Max** 100%, no cap, V-Sync, everything on, SSAA 2x and 16x anisotropic. A row changed afterwards shows the preset as Custom. Rows marked *(next start)* (language, audio output, shader preloading) apply when the game starts again.
 
-### General
-- **Language**: English, or Indonesian (the recompilation's text and the game's menus translated).
-- **Audio Output**: automatic, stereo, 5.1 surround or mono.
-- **Skip movies** and **cheats** (infinite nitrous and speedbreaker, max cash, no police, unlock all).
-- **Background Pause**: the game and its sound pause while the app is in the background.
+## Cheats
+Launcher tab **CHEATS** (orange), and the game's CHEATS category: infinite nitrous, infinite speedbreaker, no police (no new cops or pursuits; one already on goes on), unlock all, lock cash at max (9,999,999, kept in the save), and **Set cash** (0 to 9,999,999): set once when a career profile is loaded; in the launcher only while the game is not running, with Cancel. A save slot played with a cheat on is tagged **CHEATS ON** in SAVES.
+
+## Saves
+Saves are slots in the game folder, `game/saves/<slot>` (`Main` by default; under `Android/data/com.ryuna.nfsmw2005x/files` for the ISO install). The launcher's **SAVES** tab makes, selects, duplicates, renames and deletes slots, backs one up to a .zip and restores one from it; PLAY plays the selected slot, which the game's SYSTEM shows as Active save slot. Back up before uninstalling: Android removes `Android/data` with the app. Saves from builds before slots move into `Main` once.
 
 ## Status
 Tested on a Xiaomi Pad 7 (Snapdragon 7+ Gen 3): boot, the menus, the career intro and races play, about 60 FPS in a race.

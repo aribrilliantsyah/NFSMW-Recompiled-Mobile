@@ -240,6 +240,25 @@ final class UiKit {
         return col;
     }
 
+    /** − value +, as the in-game menu steps a row: step(0) is the value now, step(±1) changes it and gives the new. */
+    View stepper(String title, String summary, IntFunction<String> step) {
+        LinearLayout ctl = new LinearLayout(c);
+        ctl.setGravity(Gravity.CENTER_VERTICAL);
+        TextView val = text(step.apply(0), 14, ACCENT);
+        val.setTypeface(Typeface.DEFAULT_BOLD);
+        val.setGravity(Gravity.CENTER);
+        for (int s : new int[] {-1, 1}) {
+            TextView b = text(s < 0 ? "−" : "+", 18, FG);
+            b.setTypeface(Typeface.DEFAULT_BOLD);
+            b.setGravity(Gravity.CENTER);
+            b.setBackground(box(PANEL, 0xFF4A4A4A, 8));
+            b.setOnClickListener(v -> val.setText(step.apply(s)));
+            ctl.addView(b, new LinearLayout.LayoutParams(dp(36), dp(34)));
+            if (s < 0) ctl.addView(val, new LinearLayout.LayoutParams(dp(56), -2));
+        }
+        return row(title, summary, ctl);
+    }
+
     /** Segmented choice (radio-like buttons in a row). */
     View segmented(String title, String summary, String[] labels, int[] values, int current, Consumer<Integer> set) {
         LinearLayout col = column();
