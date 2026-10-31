@@ -35,7 +35,7 @@ Settings are in the launcher's tabs and in the game: **SETTINGS**, beside OPTION
 Launcher tab **CONTROLS**, and the game's CONTROLS category.
 - **Control mode**: **MOBILE** (steering, gas and brake pedals, nitrous, e-brake, speedbreaker, a gear lever; in the game's menus, their buttons as icons) or **XBOX** (the whole Xbox controller).
 - **Steering** (MOBILE): Stick, Arrows, Wheel (drag round it) or Tilt (turn the phone), with **Tilt sensitivity**.
-- **Opacity** and **Size** of the current layout's buttons.
+- **Opacity** and **Size** of the current layout's buttons (Size scales every button over each one's own size from the editor), kept in `mostwanted.toml` (`touch_opacity_<mode>`, `touch_size_<mode>`) and shared by the launcher and the game.
 - **Edit buttons**: move, resize and fade each control (also the ⚙ next to HIDE/TOUCH in the game). **Edit HUD**: moves the speedometer, the minimap, the race information and the EA Trax banner.
 - In the game's menus a tap on the highlighted item is A and a swipe steps through the list; the keyboard takes taps.
 - Launcher only: on-screen controller, hide with a controller, button feedback, vibration (with a test).
@@ -49,7 +49,7 @@ Launcher tab **CONTROLS**, and the game's CONTROLS category.
 | VISUALS | Bloom, Fog, Motion blur, Car reflections (full, every 2nd or 4th frame, off), Road reflections, Shadows, Particles, Falling rain, Screen raindrops, Anti-aliasing (FXAA, SSAA 2x), Anisotropic filtering |
 | SYSTEM | Language (English, or Indonesian: the recompilation's text and the game's menus translated), Audio output (automatic, mono, stereo, 5.1), Skip movies, Active save slot, About |
 
-A **Preset** sets the SPEED and VISUALS rows and the render resolution at once: **Saver** 50%, 30 fps, no reflections, motion blur or particles; **Balanced** 67%, 60 fps, the cars' reflections every 2nd frame; **Max** 100%, no cap, V-Sync, everything on, SSAA 2x and 16x anisotropic. A row changed afterwards shows the preset as Custom. Rows marked *(next start)* (language, audio output, shader preloading) apply when the game starts again.
+A **Preset** sets the SPEED and VISUALS rows and the render resolution at once: **Saver** 50%, 30 fps, no reflections, motion blur or particles; **Balanced** 67%, 60 fps, the cars' reflections every 2nd frame; **Max** 100%, no cap, V-Sync, everything on, SSAA 2x and 16x anisotropic. A row changed afterwards shows the preset as Custom. A change in the launcher reaches the game at PLAY. In the game most rows apply at once; of the rows marked *(next start)*, Language takes effect at the next start, Audio output switches at once, and Shader preloading turned on starts preloading once during this run (turned off, it stops only at the next start).
 
 ## Cheats
 Launcher tab **CHEATS** (orange), and the game's CHEATS category: infinite nitrous, infinite speedbreaker, no police (no new cops or pursuits; one already on goes on), unlock all, lock cash at max (9,999,999, kept in the save), and **Set cash** (0 to 9,999,999): set once when a career profile is loaded; in the launcher only while the game is not running, with Cancel. A save slot played with a cheat on is tagged **CHEATS ON** in SAVES.

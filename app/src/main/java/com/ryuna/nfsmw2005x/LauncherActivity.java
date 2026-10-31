@@ -622,9 +622,12 @@ public class LauncherActivity extends Activity {
                 1, 10, num(Settings.K_TILT_SENS, 5),
                 s -> s + " · full lock at " + Math.round(Settings.tiltAngle(s)) + "°",
                 v -> put(Settings.K_TILT_SENS, v)));
-        String mode = num(Settings.K_PAD_MODE, Settings.MODE_MOBILE) == Settings.MODE_XBOX ? "XBOX" : "MOBILE";
-        c.addView(ui.stepper("Opacity", "Of the " + mode + " layout's buttons.", s -> overlayRow(3, s)));
-        c.addView(ui.stepper("Size", "Every button of the " + mode + " layout.", s -> overlayRow(4, s)));
+        int mode = num(Settings.K_PAD_MODE, Settings.MODE_MOBILE) == Settings.MODE_XBOX ? Settings.MODE_XBOX
+                                                                                        : Settings.MODE_MOBILE;
+        String name = mode == Settings.MODE_XBOX ? "XBOX" : "MOBILE";
+        c.addView(ui.stepper("Opacity", "Of the " + name + " layout's buttons.", s -> look(mode, true, s)));
+        c.addView(ui.stepper("Size", "Every button of the " + name + " layout, over each one's own size.",
+                s -> look(mode, false, s)));
         c.addView(ui.gap(6));
         c.addView(ui.secondary("Edit buttons", v -> startActivity(new Intent(this, EditorActivity.class))));
         c.addView(ui.gap(6));
@@ -649,16 +652,17 @@ public class LauncherActivity extends Activity {
         return c;
     }
 
-    /** The overlay's Opacity (3) and Size (4) rows, TouchControllerView.settingsRow, the in-game rows' code: an
-     *  editor's view laid out on the screen in landscape (its places are fractions of it), stepped and saved there. */
-    private String overlayRow(int row, int step) {
-        android.graphics.Rect b = getWindowManager().getMaximumWindowMetrics().getBounds();
-        int w = Math.max(b.width(), b.height()), h = Math.min(b.width(), b.height());
-        TouchControllerView v = new TouchControllerView(this, () -> { });
-        v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
-                  View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
-        v.layout(0, 0, w, h);
-        return v.settingsRow(row, step);
+    /** Opacity or Size of a mode, percent: mostwanted.toml's (Settings.touchOpacityKey/touchSizeKey), which the
+     *  game's overlay reads too; s steps it. mToml is the file as of the last load or write, reloaded on resume. */
+    private String look(int mode, boolean opacity, int s) {
+        int legacy = Math.round(getSharedPreferences("nfsmw_touch", MODE_PRIVATE)
+                .getFloat("m" + mode + "_opacity", Settings.TOUCH_OPACITY_DEF / 100f) * 100);
+        int pct = opacity ? Settings.touchOpacity(mToml, mode, legacy) : Settings.touchSize(mToml, mode);
+        if (s != 0) {
+            pct = opacity ? Settings.stepTouchOpacity(pct, s) : Settings.stepTouchSize(pct, s);
+            put(opacity ? Settings.touchOpacityKey(mode) : Settings.touchSizeKey(mode), pct);
+        }
+        return pct + "%";
     }
 
     private LinearLayout systemCard() {

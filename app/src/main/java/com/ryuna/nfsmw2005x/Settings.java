@@ -228,6 +228,36 @@ final class Settings {
 
     static int tiltSens(Context c) { return within(nativeSettings(c).getInt(K_TILT_SENS, 5), 1, 10, 5); }
 
+    // the overlay's look per mode (0 XBOX, 1 MOBILE), percent: the CONTROLS rows Opacity and Size, launcher and game.
+    // In the settings file, not the touch preferences: those are cached per process and the game is its own process
+    static final int TOUCH_OPACITY_DEF = 70, TOUCH_OPACITY_MIN = 15, TOUCH_SIZE_DEF = 100, TOUCH_SIZE_MIN = 50,
+            TOUCH_SIZE_MAX = 220, TOUCH_STEP = 10;
+
+    static String touchOpacityKey(int mode) { return "touch_opacity_" + mode; }
+
+    /** Size: a factor over every control of the mode, on top of each one's own size from the editor. */
+    static String touchSizeKey(int mode) { return "touch_size_" + mode; }
+
+    /** The mode's opacity; legacy (the editor's old preference) while the file has none. */
+    static int touchOpacity(TomlSettings t, int mode, int legacy) {
+        int def = within(legacy, TOUCH_OPACITY_MIN, 100, TOUCH_OPACITY_DEF);
+        return within(t.getInt(touchOpacityKey(mode), def), TOUCH_OPACITY_MIN, 100, def);
+    }
+
+    static int touchSize(TomlSettings t, int mode) {
+        return within(t.getInt(touchSizeKey(mode), TOUCH_SIZE_DEF), TOUCH_SIZE_MIN, TOUCH_SIZE_MAX, TOUCH_SIZE_DEF);
+    }
+
+    /** A step of either: to the next tenth, kept in range. */
+    static int stepTouchOpacity(int pct, int step) { return stepTenths(pct, step, TOUCH_OPACITY_MIN, 100); }
+
+    static int stepTouchSize(int pct, int step) { return stepTenths(pct, step, TOUCH_SIZE_MIN, TOUCH_SIZE_MAX); }
+
+    private static int stepTenths(int pct, int step, int min, int max) {
+        int v = Math.round((pct + step * TOUCH_STEP) / (float) TOUCH_STEP) * TOUCH_STEP;
+        return Math.max(min, Math.min(max, v));
+    }
+
     /** v when it is one of known, else def. */
     static int oneOf(long v, int[] known, int def) {
         for (int k : known) if (k == v) return k;
