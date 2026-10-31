@@ -160,11 +160,16 @@ uint32_t CashAddress() {
     return CareerCash(cash) ? kernel::R32(kernel::R32(kFeDatabase) + 0x10) + kProfileCash : 0;
 }
 
-// the slot's cheats_used mark (SaveSlots.CHEATS_MARK), the launcher's CHEATS ON tag; made once per boot for each
-// cheat that is on, and for each set cash
-void MarkCheatsUsed() {
+// the slot's cheats_used mark (SaveSlots.CHEATS_MARK), the launcher's CHEATS ON tag for a slot last played with a
+// cheat on: made once per boot for each cheat that is on and for each set cash, and taken away at a boot's first
+// present with none on (the slot is the boot's hard disk for the whole run)
+void MarkCheatsUsed(bool used = true) {
     std::error_code ec;
     std::filesystem::path mark = app::SaveRoot() / "cheats_used";
+    if (!used) {
+        std::filesystem::remove(mark, ec);
+        return;
+    }
     if (std::filesystem::exists(mark, ec)) return;
     std::ofstream f(mark);
 }
@@ -188,8 +193,11 @@ void ApplyCheats() {
     no_cops.Apply(o.cheat_no_police, mgr && mem::IsCommitted(mgr + kNoNewCops) ? mgr + kNoNewCops : 0);
     unlock_all.Apply(o.cheat_unlock_all, kUnlockAllThings);
     static uint32_t marked = 0;  // the cheats marked this boot
+    static bool first = true;
     uint32_t on = (o.cheat_nos ? 1 : 0) | (o.cheat_speedbreaker ? 2 : 0) | (o.cheat_cash ? 4 : 0) |
                   (o.cheat_no_police ? 8 : 0) | (o.cheat_unlock_all ? 16 : 0);
+    if (first && !on && !o.cheat_set_cash) MarkCheatsUsed(false);
+    first = false;
     if (on & ~marked) {
         marked |= on;
         MarkCheatsUsed();
