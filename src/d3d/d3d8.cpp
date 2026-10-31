@@ -15,6 +15,7 @@
 #include "common/fe_mouse.h"
 #include "common/game_font.h"
 #include "common/options.h"
+#include "common/render_settings.h"
 #include "core/diag.h"
 #include "d3d/gpu_frame.h"
 #include "gpu/backend.h"
@@ -854,6 +855,8 @@ HLE_STDCALL(D3DDevice_Swap, 1) {
     ApplyPendingGamma();
     uint64_t gpu_wait_ns = 0;
     if (g_backend) {
+        // the settings this frame is drawn and shown with, as the settings rows left them (render_settings.h)
+        game::PublishRenderSettings();
         g_backend->Present(SurfaceOf(g_buffers[1]));
         // the title records one frame while the GPU draws the one before it: a GPU bound frame rate then paces the
         // game like a frame rate cap, and the frame times the game measures match the frames shown

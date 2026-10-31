@@ -13,6 +13,7 @@
 #include "app/app.h"
 #include "common/menu.h"
 #include "common/options.h"
+#include "common/render_settings.h"
 #include "host.h"
 
 namespace app {
@@ -63,9 +64,9 @@ void DrawShadowed(ImDrawList* dl, float size, ImVec2 at, ImU32 color, const char
 }
 
 // the frame rate, and under it the CPU's and GPU's load and temperatures and the battery's, at the place
-// Options::fps_position picks
+// Options::fps_position picks; drawn on the render side, so from the frame's settings (render_settings.h)
 void DrawFpsCounter(double fps) {
-    const game::Options& o = game::Opt();
+    const game::RenderSettings o = game::FrameRenderSettings();
     if (!o.fps_counter) return;
     host::SamplePerf();
     char text[16];

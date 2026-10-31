@@ -19,6 +19,7 @@
 #include "common/aspect.h"
 #include "common/fe_mouse.h"
 #include "common/options.h"
+#include "common/render_settings.h"
 #include "cpu/x86_context.h"
 #include "kernel/kernel.h"
 #include "kernel/memory.h"
@@ -336,7 +337,7 @@ bool FeTakeAccept() {
 // its 640 wide layout is stretched to the frame and tested so. 640 there put a tap on a row's right arrow 11% short
 // of it on a 3:2 tablet
 void FeTouch(bool down, float u, float v) {
-    float wide = 480.0f * Aspect();
+    float wide = 480.0f * LatestRenderSettings().aspect;  // any thread: the published copy
     g_x = int32_t((u - 0.5f) * wide);
     g_y = int32_t((v - 0.5f) * 480.0f);
     if (down && !g_down) {

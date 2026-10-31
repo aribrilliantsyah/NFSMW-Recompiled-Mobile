@@ -18,6 +18,7 @@
 
 #include "core/diag.h"
 #include "core/log.h"
+#include "common/render_settings.h"
 #include "d3d/gpu_frame.h"
 #include "gpu/backend.h"
 #include "kernel/kernel.h"
@@ -213,6 +214,9 @@ public:
         Cmd c{Op::Present};
         c.s1 = front;
         c.s1.header = Header(front.header);
+        // the settings the game published for this frame (D3DDevice_Swap), in order with its commands
+        game::RenderSettings rs = game::LatestRenderSettings();
+        c.data = Put(&rs, sizeof(rs));
         cur_->cmds.push_back(c);
         Use(front.header);
         uint64_t id = Submit();
@@ -491,7 +495,13 @@ private:
             case Op::Draw: inner_->Draw(state_, c.a, c.b, c.c, c.d ? data : nullptr); break;
             case Op::Clear: inner_->Clear(state_, c.a, c.size ? data : nullptr, c.b, c.c, c.f, c.d); break;
             case Op::Copy: inner_->Copy(c.s1, c.s2, c.a, c.b, c.c); break;
-            case Op::Present: inner_->Present(c.s1); break;
+            case Op::Present: {
+                game::RenderSettings rs;
+                std::memcpy(&rs, data, sizeof(rs));
+                game::HandOverRenderSettings(rs);
+                inner_->Present(c.s1);
+                break;
+            }
             case Op::Sync: inner_->Sync(c.a, 0); break;
             case Op::RecordLate: inner_->RecordLate(c.a); break;
             case Op::Flush: inner_->Flush(); break;

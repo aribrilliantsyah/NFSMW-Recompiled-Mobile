@@ -10,6 +10,7 @@
 #include "common/hud_layout.h"
 #include "common/mouse_keyboard.h"
 #include "common/options.h"
+#include "common/render_settings.h"
 #include "common/settings_lock.h"
 
 namespace game {
@@ -101,6 +102,7 @@ void Init() {
     input::LoadBindings();
     LoadHudLayout();
     audio::SetOutputMode(Opt().audio_output);
+    PublishRenderSettings();  // the renderer's first set, before its Init
 }
 
 void Save(void* table) {

@@ -31,6 +31,7 @@
 
 #include "app/app.h"
 #include "common/aspect.h"
+#include "common/render_settings.h"
 #include "core/diag.h"
 #include "core/log.h"
 #include "d3d/gpu_frame.h"
@@ -1291,6 +1292,9 @@ private:
     Target* draw_ds_ = nullptr;
     uint32_t guest_w_ = 640, guest_h_ = 480;
     float scale_ = 1.0f;
+    // the settings this frame is drawn with: the game thread's published copy, taken once a frame (Present), never
+    // Options or app::Settings themselves, which the in-game settings change on the game thread meanwhile
+    game::RenderSettings rs_;
     Assembled asm_;
     std::unordered_map<uint32_t, Late> late_;
     std::mutex late_lock_;
@@ -1325,13 +1329,14 @@ std::atomic<float> g_gpu_load{-1};
 bool VulkanBackend::Init(uint32_t width, uint32_t height) {
     guest_w_ = width;
     guest_h_ = height;
+    rs_ = game::FrameRenderSettings();  // the swap chain's vsync and the scale
     vkshader::Init(app::ExeDir() / "shadercache");
     if (!CreateInstance() || !CreateSurface() || !PickDevice() || !CreateDevice()) return false;
     alloc_.Init(pd_, dev_);
     if (!CreateLayouts() || !CreateFrames() || !CreateSwapchain() || !CreateFixedImages()) return false;
     Begin();
     ui_ = InitUi();
-    scale_ = app::RenderScale(guest_h_);
+    scale_ = game::RenderScaleOf(rs_, guest_h_);
     LOGI("vulkan: %ux%u guest, %ux%u screen, render scale %.3f", width, height, swap_extent_.width,
          swap_extent_.height, scale_);
     return true;
@@ -1552,7 +1557,7 @@ bool VulkanBackend::CreateSwapchain() {
         h = int(caps.currentExtent.height);
     }
     if (w <= 0 || h <= 0) return false;
-    vsync_ = app::Get().vsync;
+    vsync_ = rs_.vsync;
     uint32_t pn = 0;
     vkGetPhysicalDeviceSurfacePresentModesKHR(pd_, surface_, &pn, nullptr);
     std::vector<VkPresentModeKHR> modes(pn);
@@ -2752,7 +2757,7 @@ VkSampler VulkanBackend::StageSampler(const State& s, int i, const DrawTextures&
     sd.mipmapMode = mip == kTexfLinear ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST;
     bool anisotropic = min == kTexfAnisotropic || mag == kTexfAnisotropic;
     uint32_t an = anisotropic ? std::max<uint32_t>(t[kTssMaxAnisotropy], 1) : 1;
-    uint32_t aniso = app::Get().aniso;
+    uint32_t aniso = rs_.aniso;
     bool mipped = mip && stages.levels[i] > 1;
     if (aniso && lin(min) && mipped && !stages.info[i].shadow) an = aniso;
     if (an > 1 && feats_.samplerAnisotropy) {
@@ -3209,10 +3214,10 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, DrawTextures& 
     // instead of the last one drawn
     constexpr uint32_t kReflectionsOff = 3;
     // by address too: a cube never drawn since the start would read its memory, never written
-    if (d.cube && game::Opt().reflections == kReflectionsOff &&
+    if (d.cube && rs_.reflections == kReflectionsOff &&
         (tit != targets_.end() || cubes_.count(d.data) || d.data == game::g_env_cube.load()))
         return env_off_.view;
-    if (!d.cube && !game::Opt().road_reflections && d.data && d.data == game::g_road_reflection.load())
+    if (!d.cube && !rs_.road_reflections && d.data && d.data == game::g_road_reflection.load())
         return road_off_.view;
     if (tit != targets_.end() && d.cube && !fi.depth && !fi.compressed)
         if (VkImageView v = BindCubeTargets(stage, d, stages)) return v;
@@ -3354,12 +3359,12 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     DrawTextures stages;
     if (!BindStageTextures(s, stages) || !draw_rt_ && !draw_ds_) return;
     // BLOOM off: the glow, the frame shrunk to 160x120 and blurred, is not added back onto the frame (ONE + ONE)
-    if (!game::Opt().bloom && stages.small && draw_rt_ && draw_rt_->gw == guest_w_ && draw_rt_->gh == guest_h_ &&
+    if (!rs_.bloom && stages.small && draw_rt_ && draw_rt_->gw == guest_w_ && draw_rt_->gh == guest_h_ &&
         SimpleState(s, kMBlendEnable) && SimpleState(s, kMSrcBlend) == kBlendOne && SimpleState(s, kMDestBlend) == kBlendOne)
         return;
     // SHADOWS off: the trees' and buildings' shadows on the road are the frame's one 2x multiply (DST_COLOR, SRC_COLOR)
     constexpr uint32_t kBlendDstColor = 0x306, kBlendSrcColor = 0x300;
-    if (!game::Opt().shadows && draw_rt_ && draw_rt_->gw == guest_w_ && draw_rt_->gh == guest_h_ &&
+    if (!rs_.shadows && draw_rt_ && draw_rt_->gw == guest_w_ && draw_rt_->gh == guest_h_ &&
         SimpleState(s, kMBlendEnable) && SimpleState(s, kMSrcBlend) == kBlendDstColor &&
         SimpleState(s, kMDestBlend) == kBlendSrcColor)
         return;
@@ -3368,7 +3373,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     // alpha as an amount towards its constant (A fog alpha, B C0, C r0): at 1 the whole picture was that grey. Its A
     // becomes zero, the scene alone
     constexpr uint32_t kFinalFog = 3;
-    if (!game::Opt().fog && pk.programmable && (pk.final_abcd >> 24 & 0xEF) == kFinalFog &&
+    if (!rs_.fog && pk.programmable && (pk.final_abcd >> 24 & 0xEF) == kFinalFog &&
         (pk.final_abcd >> 8 & 0xF) != kFinalFog)
         pk.final_abcd &= 0x00FFFFFF;
     if (last_ps_ && !std::memcmp(&pk, &last_pk_, sizeof(pk))) {
@@ -3400,7 +3405,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     SurfaceSize(draw_rt_ ? s.rt : s.zs, size.w, size.h);
     DrawConstants c{};
     FillSurfaceConstants(s, size, c);
-    if (game::Opt().fog) FillFogConstants(s, c);  // off: no fog mode, the shaders' fog factor stays 1
+    if (rs_.fog) FillFogConstants(s, c);  // off: no fog mode, the shaders' fog factor stays 1
     FillCombinerConstants(s, c);
     FillTextureConstants(s, stages, c);
     if (sh.fixed_transform) {
@@ -3714,7 +3719,7 @@ bool VulkanBackend::AcquireImage(uint32_t& index) {
     int w, h;
     host::WindowPixels(w, h);
     if (!swap_ || swap_stale_ || uint32_t(w) != swap_extent_.width || uint32_t(h) != swap_extent_.height ||
-        app::Get().vsync != vsync_) {
+        rs_.vsync != vsync_) {
         if (!CreateSwapchain()) return false;
     }
     // a bounded wait: a window Android is taking away may never hand an image back
@@ -3747,12 +3752,12 @@ void VulkanBackend::DrawFrame(Target* t, uint32_t index) {
     vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                          0, 0, nullptr, 0, nullptr, 1, &b);
     // the frame letterboxed to the game's aspect over black
-    float aspect = game::Aspect();
+    float aspect = rs_.aspect;
     float w = float(swap_extent_.width), h = float(swap_extent_.height);
     float vw = std::min(w, h * aspect), vh = vw / aspect;
     float c[16] = {0, 0, 1, 1, gamma_ ? 1.0f : 0.0f, 0, 1, 1};
     // the screen filter and anti-aliasing, off unless the player picks them: the plain blit then
-    uint32_t filter = game::Opt().screen_filter, aa = game::Opt().anti_aliasing;
+    uint32_t filter = rs_.screen_filter, aa = rs_.anti_aliasing;
     bool post = t && (filter || aa);
     if (post) {
         c[8] = 1.0f / float(std::max(t->w, 1u));
@@ -3883,7 +3888,7 @@ void VulkanBackend::ReleaseOldTextures() {
 }
 
 void VulkanBackend::ApplySettings() {
-    float want = app::RenderScale(guest_h_);
+    float want = game::RenderScaleOf(rs_, guest_h_);
     if (std::fabs(want - scale_) <= 1e-4f) return;
     Submit(true, false);
     for (auto& [key, t] : targets_) {
@@ -3916,6 +3921,7 @@ void VulkanBackend::SavePipelineCache() {
 }
 
 void VulkanBackend::Present(const Surface& front) {
+    rs_ = game::FrameRenderSettings();  // this frame's present and the next frame's draws
     Target* t = EnsureTarget(front, false);
     if (t && LatchCpuWrite(*t)) UploadTarget(*t, front);
     if (ramp_dirty_) UploadGammaRamp();
@@ -3993,7 +3999,7 @@ void VulkanBackend::Present(const Surface& front) {
         gpu_ns_ = 0;
     }
     if (presents_ % 600 == 0) SavePipelineCache();
-    if (!preload_started_ && game::Opt().shader_preload) StartPreload();
+    if (!preload_started_ && rs_.shader_preload) StartPreload();
     ApplySettings();
 }
 

@@ -24,6 +24,7 @@
 #include "common/fe_mouse.h"
 #include "common/keys.h"
 #include "common/options.h"
+#include "common/render_settings.h"
 #include "common/settings_menu.h"
 #include "host.h"
 
@@ -346,7 +347,8 @@ void FeSwipe(const Finger& f) {
 
 // the FEng mouse at a finger, in shares of the frame as the presenter letterboxes it
 void FePointer(const Finger& f, bool down) {
-    float w = Width(), h = Height(), aspect = game::Aspect();
+    // the event thread: the published copy, not Options the game thread changes
+    float w = Width(), h = Height(), aspect = game::LatestRenderSettings().aspect;
     float vw = std::min(w, h * aspect), vh = vw / aspect;
     game::FeTouch(down, (f.x - (w - vw) / 2) / vw, (f.y - (h - vh) / 2) / vh);
 }
