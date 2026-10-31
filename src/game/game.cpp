@@ -173,19 +173,37 @@ void MarkCheatsUsed(bool used = true) {
     if (std::filesystem::exists(mark, ec)) return;
     std::ofstream f(mark);
 }
+
+// a consumed file request not yet answered in the file (AckCashRequest failed), kNoCash none; presents to the next try
+int64_t g_cash_ack = kNoCash;
+int g_cash_ack_wait = 0;
+constexpr int kCashAckRetry = 60;
 }  // namespace
 
 void ApplyCheats() {
     Options& o = Opt();
     kernel::G<uint8_t>(kInfiniteNos) = o.cheat_nos ? 1 : 0;
     kernel::G<uint8_t>(kInfiniteSpeedbreaker) = o.cheat_speedbreaker ? 1 : 0;
+    uint32_t on = (o.cheat_nos ? 1 : 0) | (o.cheat_speedbreaker ? 2 : 0) | (o.cheat_cash ? 4 : 0) |
+                  (o.cheat_no_police ? 8 : 0) | (o.cheat_unlock_all ? 16 : 0);
+    // a boot with none on and no set cash pending clears the last session's mark, before a set cash marks this one
+    static bool first = true;
+    if (first && !on && o.cheat_set_cash == kNoCash) MarkCheatsUsed(false);
+    first = false;
     uint32_t cash = CashAddress();
-    if (o.cheat_set_cash && cash) {
-        // once: 0 again in the file, so neither the next boot nor the launcher applies it again
-        kernel::W32(cash, std::min(o.cheat_set_cash, kMaxCash));
-        o.cheat_set_cash = 0;
-        app::Save();
+    if (o.cheat_set_cash != kNoCash && cash) {
+        kernel::W32(cash, uint32_t(std::clamp<int64_t>(o.cheat_set_cash, 0, kMaxCash)));
+        o.cheat_set_cash = kNoCash;
         MarkCheatsUsed();
+        // consumed: the file's request (applied now, or replaced by the CHEATS row's) is answered, until then retried
+        // without setting the cash again, so no later boot sets it a second time
+        g_cash_ack = o.cheat_set_cash_file;
+        o.cheat_set_cash_file = kNoCash;
+        g_cash_ack_wait = 0;
+    }
+    if (g_cash_ack != kNoCash && g_cash_ack_wait-- <= 0) {
+        if (AckCashRequest(g_cash_ack)) g_cash_ack = kNoCash;
+        else g_cash_ack_wait = kCashAckRetry;
     }
     if (o.cheat_cash && cash) kernel::W32(cash, kMaxCash);
     static HeldByte no_cops, unlock_all;
@@ -193,11 +211,6 @@ void ApplyCheats() {
     no_cops.Apply(o.cheat_no_police, mgr && mem::IsCommitted(mgr + kNoNewCops) ? mgr + kNoNewCops : 0);
     unlock_all.Apply(o.cheat_unlock_all, kUnlockAllThings);
     static uint32_t marked = 0;  // the cheats marked this boot
-    static bool first = true;
-    uint32_t on = (o.cheat_nos ? 1 : 0) | (o.cheat_speedbreaker ? 2 : 0) | (o.cheat_cash ? 4 : 0) |
-                  (o.cheat_no_police ? 8 : 0) | (o.cheat_unlock_all ? 16 : 0);
-    if (first && !on && !o.cheat_set_cash) MarkCheatsUsed(false);
-    first = false;
     if (on & ~marked) {
         marked |= on;
         MarkCheatsUsed();

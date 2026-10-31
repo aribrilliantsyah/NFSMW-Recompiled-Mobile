@@ -265,7 +265,8 @@ void EnsureCashDraft() {
     if (g_cash_draft_set) return;
     uint32_t cash = 0;
     const game::Options& o = game::Opt();
-    g_cash_draft = std::min(o.cheat_set_cash ? o.cheat_set_cash : game::CareerCash(cash) ? cash : 0, game::kMaxCash);
+    g_cash_draft = uint32_t(o.cheat_set_cash != game::kNoCash ? o.cheat_set_cash : game::CareerCash(cash) ? cash : 0);
+    g_cash_draft = std::min(g_cash_draft, game::kMaxCash);
 }
 
 // a step of the draft: 10,000, ten times that in a run (the menu reports no hold, only steps: a held left or right
@@ -514,7 +515,7 @@ std::string Value(const Row& r, int step) {
             if (step) StepCash(step);  // nothing saved: APPLY hands it over
             return "$" + Grouped(g_cash_draft);
         // a set cash not yet applied (no profile yet) waits
-        case kApplyCash: return o.cheat_set_cash ? "PENDING" : "";
+        case kApplyCash: return o.cheat_set_cash != game::kNoCash ? "PENDING" : "";
         default: return "";
     }
 }
@@ -522,12 +523,12 @@ std::string Value(const Row& r, int step) {
 void Activate(const Row& r) {
     // the overlay's editor and the HUD editor are the launcher shell's
     if (r.id == kEditButtons || r.id == kEditHud) host::ShellRow(r.id - kControlMode, 1);
-    // the next present with a profile sets it (ApplyCheats); 0 is none, a pending one taken back
+    // the next present with a profile sets it (ApplyCheats), 0 too. This run's only: the settings file's request is the
+    // launcher's (one pending from it is replaced, and answered when this one is set)
     if (r.id == kApplyCash) {
         EnsureCashDraft();
         game::Opt().cheat_set_cash = g_cash_draft;
         g_cash_draft_set = false;  // the row shows the pending value, then the career's
-        app::Save();
     }
 }
 

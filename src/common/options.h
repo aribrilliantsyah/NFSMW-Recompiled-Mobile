@@ -20,6 +20,7 @@ inline bool KnownLanguage(const std::string& code) {
 inline constexpr uint32_t kAaOff = 0, kAaFxaa = 1, kAaSsaa = 2;
 
 inline constexpr uint32_t kMaxCash = 9999999;  // the cash cheats' top, the most the career's counter shows
+inline constexpr int64_t kNoCash = -1;         // no set cash pending
 
 struct Options {
     bool fps_counter = false;
@@ -51,10 +52,12 @@ struct Options {
     bool cheat_cash = false;          // the career's cash kept at kCheatCash
     bool cheat_no_police = false;     // no new cops or pursuits
     bool cheat_unlock_all = false;    // every car, part and race unlocked
-    // the career's cash to set once (0 none, at most kMaxCash): the launcher's or the CHEATS row's, applied at the first
-    // present with a profile and then 0 in the settings file again; native's from Load on (the launcher writes it
-    // only while the game is not running)
-    uint32_t cheat_set_cash = 0;
+    // the career's cash to set once, 0..kMaxCash (0 is an amount), kNoCash none: the settings file's request
+    // (LoadCashRequest) or the CHEATS row's APPLY CASH (this run only), set by ApplyCheats at the first present with a
+    // profile. Not in kGame.options: app::Save never writes it, the launcher owns the file's request
+    int64_t cheat_set_cash = kNoCash;
+    // the file's request as Load read it, kNoCash none: answered (AckCashRequest) once a set cash is applied this run
+    int64_t cheat_set_cash_file = kNoCash;
     bool skip_movies = false;         // the movies end as they start, src/game/game.cpp
     uint32_t audio_output = 0;  // audio::kOutputAuto, kOutputStereo, kOutputSurround or kOutputMono
     std::string language = "int";  // one of kLanguages
@@ -75,6 +78,10 @@ void ApplyGraphicsSwitches();  // src/game/game.cpp: game thread, at each presen
 void ApplyCheats();            // src/game/game.cpp: game thread, at each present
 // src/game/game.cpp, game thread: the career profile's cash; false while no profile is named (made or loaded)
 bool CareerCash(uint32_t& cash);
+// src/common/game_info.cpp, game thread: the settings file's set cash request answered: under the settings lock, the
+// file's cheat_set_cash made kNoCash if it still is `value` (a newer one the launcher wrote stays). False when the file
+// could not be read or written, to be tried again
+bool AckCashRequest(int64_t value);
 bool Racing();    // src/game/game.cpp, any thread: the game flow is in a race (free roam too), not loading or the front end
 
 }  // namespace game

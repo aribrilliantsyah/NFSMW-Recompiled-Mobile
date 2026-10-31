@@ -66,8 +66,11 @@ final class Settings {
     static final String K_CHEAT_CASH = "cheat_cash";
     static final String K_CHEAT_COPS = "cheat_no_police";
     static final String K_CHEAT_UNLOCK = "cheat_unlock_all";
-    static final String K_CHEAT_SET_CASH = "cheat_set_cash";  // cash to set once, 0 none; native applies and clears it
-    static final int MAX_CASH = 9_999_999;                     // native kMaxCash
+    // the set cash request (native game_info.cpp's Load and AckCashRequest): the amount, 0..MAX_CASH, set once while the
+    // flag is true; the game makes the flag false once it set that amount. Written by the launcher only
+    static final String K_CHEAT_SET_CASH = "cheat_set_cash";
+    static final String K_CHEAT_SET_CASH_PENDING = "cheat_set_cash_pending";
+    static final int MAX_CASH = 9_999_999;  // native kMaxCash
     // Sound
     static final String K_AUDIO_OUT = "audio_output"; // 0 auto, 1 stereo, 2 5.1, 3 mono
     // Touch controls
@@ -243,6 +246,18 @@ final class Settings {
         if (d.isEmpty() || d.length() > 7 || !d.matches("[0-9]+")) return -1;
         int v = Integer.parseInt(d);
         return v <= MAX_CASH ? v : -1;
+    }
+
+    /** The request in t: its amount, or -1 for none. */
+    static int pendingCash(TomlSettings t) {
+        if (!t.getBool(K_CHEAT_SET_CASH_PENDING, false)) return -1;
+        return within(t.getInt(K_CHEAT_SET_CASH, -1), 0, MAX_CASH, -1);
+    }
+
+    /** t's request made value (0..MAX_CASH, 0 an amount too), or none for -1. */
+    static void requestCash(TomlSettings t, int value) {
+        if (value >= 0) t.put(K_CHEAT_SET_CASH, Math.min(value, MAX_CASH));
+        t.put(K_CHEAT_SET_CASH_PENDING, value >= 0);
     }
 
     /** One key into the settings file, the rest of it as it is. */

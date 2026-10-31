@@ -31,13 +31,34 @@ public class SettingsCashTest {
     }
 
     @Test
-    public void setCashRoundTripsThroughTheFile() throws Exception {
+    public void requestRoundTripsZeroMaxAndCancel() throws Exception {
         File f = new File(tmp.getRoot(), "mostwanted.toml");
-        TomlSettings.update(f, t -> t.put(Settings.K_CHEAT_SET_CASH, Settings.parseCash("1,234,567")));
-        assertEquals(1234567, TomlSettings.load(f).getInt(Settings.K_CHEAT_SET_CASH, -1));
-        // native's clear after applying, then the launcher's read
-        TomlSettings.update(f, t -> t.put(Settings.K_CHEAT_SET_CASH, 0));
-        assertEquals(0, Settings.within(TomlSettings.load(f).getInt(Settings.K_CHEAT_SET_CASH, 0), 0,
-                                        Settings.MAX_CASH, 0));
+        assertEquals(-1, Settings.pendingCash(TomlSettings.load(f)));  // no file, no request
+        TomlSettings.update(f, t -> Settings.requestCash(t, 1234567));
+        assertEquals(1234567, Settings.pendingCash(TomlSettings.load(f)));
+        TomlSettings.update(f, t -> Settings.requestCash(t, 0));  // zero is an amount, not none
+        assertEquals(0, Settings.pendingCash(TomlSettings.load(f)));
+        assertEquals(true, TomlSettings.load(f).getBool(Settings.K_CHEAT_SET_CASH_PENDING, false));
+        TomlSettings.update(f, t -> Settings.requestCash(t, Settings.MAX_CASH));
+        assertEquals(Settings.MAX_CASH, Settings.pendingCash(TomlSettings.load(f)));
+        TomlSettings.update(f, t -> Settings.requestCash(t, -1));  // cancel
+        assertEquals(-1, Settings.pendingCash(TomlSettings.load(f)));
+    }
+
+    @Test
+    public void gameAnswerAndOldFilesAreNoRequest() throws Exception {
+        File f = new File(tmp.getRoot(), "mostwanted.toml");
+        TomlSettings.update(f, t -> Settings.requestCash(t, 500000));
+        // the game's answer (AckCashRequest): the flag false, the amount left
+        TomlSettings.update(f, t -> t.put(Settings.K_CHEAT_SET_CASH_PENDING, false));
+        assertEquals(-1, Settings.pendingCash(TomlSettings.load(f)));
+        // the first build's file: an amount with no flag
+        File old = new File(tmp.getRoot(), "old.toml");
+        TomlSettings.update(old, t -> t.put(Settings.K_CHEAT_SET_CASH, 0));
+        assertEquals(-1, Settings.pendingCash(TomlSettings.load(old)));
+        // an amount out of range is none
+        TomlSettings.update(old, t -> { t.put(Settings.K_CHEAT_SET_CASH, 10_000_000); t.put(
+                Settings.K_CHEAT_SET_CASH_PENDING, true); });
+        assertEquals(-1, Settings.pendingCash(TomlSettings.load(old)));
     }
 }

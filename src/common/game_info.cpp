@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 
 #include <toml++/toml.hpp>
 
@@ -8,6 +10,7 @@
 #include "common/hud_layout.h"
 #include "common/mouse_keyboard.h"
 #include "common/options.h"
+#include "common/settings_lock.h"
 
 namespace game {
 
@@ -39,7 +42,40 @@ void Load(const void* table) {
         for (auto&& [id, value] : *keys)
             if (auto v = value.value<std::string>()) o.keys[std::string(id.str())] = *v;
     input::LoadPadMap(&t);
+    // the launcher's set cash request: cheat_set_cash_pending with its amount cheat_set_cash (an amount alone, as
+    // builds before the flag wrote 0 there, is none)
+    int64_t cash = t["cheat_set_cash"].value_or(int64_t(-1));
+    if (t["cheat_set_cash_pending"].value_or(false) && cash >= 0 && cash <= int64_t(kMaxCash))
+        o.cheat_set_cash = o.cheat_set_cash_file = cash;
 }
+
+}  // namespace
+
+bool AckCashRequest(int64_t value) {
+    std::filesystem::path path = app::ExeDir() / app::kGame.settings;
+    SettingsLock lock(path);
+    if (!lock.ok()) return false;
+    toml::table t;
+    try {
+        t = toml::parse_file(path.string());
+    } catch (...) {
+        return false;  // gone or broken: the request may still be there
+    }
+    // answered already, or the launcher wrote another since: nothing of ours to clear
+    if (!t["cheat_set_cash_pending"].value_or(false) || t["cheat_set_cash"].value_or(int64_t(-1)) != value) return true;
+    t.insert_or_assign("cheat_set_cash_pending", false);
+    std::string tmp = path.string() + ".tmp";
+    {
+        std::ofstream f(tmp);
+        f << t << "\n";
+        if (!f) return false;
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    return !ec;
+}
+
+namespace {
 
 // layout.toml's [hud], the launcher's HUD layout editor's: each item's offset from where the game puts it, FEng units,
 // kept inside FEng's widest screen
@@ -118,7 +154,6 @@ const app::GameInfo app::kGame = {
                 {"cheat_cash", &game::Opt().cheat_cash, nullptr},
                 {"cheat_no_police", &game::Opt().cheat_no_police, nullptr},
                 {"cheat_unlock_all", &game::Opt().cheat_unlock_all, nullptr},
-                {"cheat_set_cash", nullptr, &game::Opt().cheat_set_cash},
                 {"skip_movies", &game::Opt().skip_movies, nullptr},
                 {"fps_usage", &game::Opt().fps_usage, nullptr},
                 {"fps_temps", &game::Opt().fps_temps, nullptr},

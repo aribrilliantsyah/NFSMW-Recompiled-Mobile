@@ -528,10 +528,11 @@ public class LauncherActivity extends Activity {
         c.addView(ui.toggle("Lock cash at max", "Keeps the career's cash at 9,999,999; it ends up in the save.",
                 flag(Settings.K_CHEAT_CASH, false), v -> put(Settings.K_CHEAT_CASH, v)));
 
-        // Set cash: written as cheat_set_cash, which the game sets once a career profile is loaded and then clears
-        int pending = Settings.within(mToml.getInt(Settings.K_CHEAT_SET_CASH, 0), 0, Settings.MAX_CASH, 0);
+        // Set cash: a request in the settings file (Settings.requestCash), which the game sets once a career profile
+        // is loaded and then answers; only while the game is not running, as the game reads it at its start
+        int pending = Settings.pendingCash(mToml);
         TextView status = ui.summary("");
-        java.util.function.IntConsumer showStatus = p -> status.setText(p > 0
+        java.util.function.IntConsumer showStatus = p -> status.setText(p >= 0
                 ? String.format(Locale.US, "Pending: $%,d, set when a career profile is loaded in the game.", p)
                 : String.format(Locale.US, "The career's cash, set once when a profile is loaded (0 to %,d).",
                                 Settings.MAX_CASH));
@@ -539,7 +540,7 @@ public class LauncherActivity extends Activity {
         cash.setInputType(InputType.TYPE_CLASS_NUMBER);
         cash.setSingleLine(true);
         cash.setHint("0 – 9999999");
-        cash.setText(pending > 0 ? String.valueOf(pending) : "");
+        cash.setText(pending >= 0 ? String.valueOf(pending) : "");
         cash.setTextColor(UiKit.FG);
         cash.setHintTextColor(UiKit.DIM);
         cash.setTextSize(14);
@@ -556,14 +557,38 @@ public class LauncherActivity extends Activity {
                 cash.setError("0 to 9,999,999");
                 return;
             }
-            put(Settings.K_CHEAT_SET_CASH, value);
-            showStatus.accept(value);
-            Toast.makeText(this, value > 0 ? "Cash set when a career profile is loaded" : "Set cash cleared",
-                           Toast.LENGTH_SHORT).show();
+            if (requestCash(value)) {
+                showStatus.accept(value);
+                Toast.makeText(this, "Cash set when a career profile is loaded", Toast.LENGTH_SHORT).show();
+            }
         });
         apply.setTextColor(CHEATS_ORANGE);
         c.addView(apply);
+        c.addView(ui.gap(6));
+        c.addView(ui.secondary("Cancel set cash", v -> {
+            if (requestCash(-1)) {
+                showStatus.accept(-1);
+                Toast.makeText(this, "No cash will be set", Toast.LENGTH_SHORT).show();
+            }
+        }));
         return c;
+    }
+
+    /** The settings file's set cash request: value, or none for -1. False (and said) when the game is running or the
+     *  file could not be written; mToml is the file as written only on success. */
+    private boolean requestCash(int value) {
+        if (gameRunning()) {
+            Toast.makeText(this, "The game is running: exit it (☰ > Exit) first.", Toast.LENGTH_LONG).show();
+            return false;
+        }
+        try {
+            mToml = Settings.updateNative(this, t -> Settings.requestCash(t, value));
+            mTomlStamp = Settings.nativeFile(this).lastModified();
+            return true;
+        } catch (IOException e) {
+            Toast.makeText(this, "Cannot save settings: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            return false;
+        }
     }
 
     private LinearLayout displayCard() {
