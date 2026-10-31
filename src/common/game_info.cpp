@@ -6,6 +6,7 @@
 
 #include "app/app.h"
 #include "audio/output.h"
+#include "common/aspect.h"
 #include "common/menu.h"
 #include "common/hud_layout.h"
 #include "common/mouse_keyboard.h"
@@ -102,6 +103,7 @@ void Init() {
     input::LoadBindings();
     LoadHudLayout();
     audio::SetOutputMode(Opt().audio_output);
+    LatchAspect();            // the frame's shape for this run, before anything asks for it
     PublishRenderSettings();  // the renderer's first set, before its Init
 }
 

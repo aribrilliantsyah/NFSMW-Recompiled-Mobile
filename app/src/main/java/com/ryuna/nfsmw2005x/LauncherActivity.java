@@ -203,10 +203,10 @@ public class LauncherActivity extends Activity {
 
     private LinearLayout screenCard() {
         LinearLayout c = category("SCREEN");
-        c.addView(ui.toggle("Widescreen", "On: the whole screen, the game's widescreen mode widened to the phone (Hor+). "
+        c.addView(ui.toggle("Widescreen (next start)", "On: the whole screen, the game's widescreen mode widened to the phone (Hor+). "
                 + "Off: the Xbox's 4:3 picture with side bars.",
                 flag(Settings.K_WIDESCREEN, true), v -> put(Settings.K_WIDESCREEN, v)));
-        c.addView(ui.choice("Aspect ratio", "The picture's shape with widescreen on; Full screen is the phone's.",
+        c.addView(ui.choice("Aspect ratio (next start)", "The picture's shape with widescreen on; Full screen is the phone's.",
                 new String[] {"Full screen", "1:1", "5:4", "4:3", "3:2", "16:10", "16:9", "18:9", "19.5:9", "20:9",
                               "21:9"},
                 new int[] {0, 100, 125, 133, 150, 160, 178, 200, 217, 222, 233},

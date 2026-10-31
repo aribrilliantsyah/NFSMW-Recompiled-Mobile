@@ -35,14 +35,25 @@ inline float ScreenAspect() {
     return aspect;
 }
 
-// the output's shape: the frame is shown that wide, letterboxed on the screen when it is not the screen's; the
-// launcher's widescreen off is the console's 4:3
-inline float Aspect() {
+// the shape the settings ask for: the frame is shown that wide, letterboxed on the screen when it is not the screen's;
+// widescreen off is the console's 4:3
+inline float WantedAspect() {
     if (!Opt().widescreen) return 4.0f / 3.0f;
     uint32_t code = Opt().aspect_ratio;
     for (const AspectChoice& a : kAspects)
         if (a.code == code && a.ratio > 0) return a.ratio;
     return ScreenAspect();
+}
+
+// the boot's shape, latched by LatchAspect (src/common/game_info.cpp's Init, after the settings load): the game takes
+// its widescreen flag once (XGetVideoFlags at boot) and lays out its views, HUD and menus for it, so a shape changed
+// later (the settings rows) would show that frame squeezed or stretched until a restart. Both editors mark Widescreen
+// and Aspect ratio as next start
+inline std::atomic<float> g_boot_aspect{0.0f};
+inline void LatchAspect() { g_boot_aspect = WantedAspect(); }
+inline float Aspect() {
+    float a = g_boot_aspect;
+    return a > 0 ? a : WantedAspect();
 }
 
 }  // namespace game

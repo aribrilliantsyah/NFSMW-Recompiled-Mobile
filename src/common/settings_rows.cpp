@@ -240,8 +240,8 @@ const char* RowKey(int id) {
 // ---- per-category row lists (built once) ----
 
 const std::vector<Row> kScreenRows = {
-    {Kind::Toggle, kWidescreen, "Widescreen"},
-    {Kind::Choice, kAspectRatio, "Aspect ratio"},
+    {Kind::Toggle, kWidescreen, "Widescreen (next start)"},
+    {Kind::Choice, kAspectRatio, "Aspect ratio (next start)"},
     {Kind::Choice, kRenderRes, "Render resolution"},
     {Kind::Choice, kScreenFilter, "Screen filter"},
     {Kind::Toggle, kYellowFilter, "Yellow filter"},
