@@ -64,9 +64,8 @@ public class EditorActivity extends Activity {
         @Override
         protected void onSizeChanged(int w, int h, int ow, int oh) {
             super.onSizeChanged(w, h, ow, oh);
-            android.content.SharedPreferences p = Settings.prefs(getContext());
             int fw = w, fh = h;
-            if (!p.getBoolean(Settings.K_WIDESCREEN, true)) {
+            if (!Settings.widescreen(getContext())) {
                 float aspect = 4f / 3f;
                 if (w > h * aspect) fw = Math.round(h * aspect); else fh = Math.round(w / aspect);
             }

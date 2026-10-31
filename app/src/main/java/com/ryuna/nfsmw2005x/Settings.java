@@ -10,26 +10,30 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 /**
- * Every launcher setting, kept in SharedPreferences ("nfsmw"), and the files
- * the native engine reads at start in the app's external files directory
- * (app::ExeDir):
+ * The launcher's settings and the files the native engine reads in the app's
+ * external files directory (app::ExeDir):
  *
  *   mostwanted.toml  the engine's settings (native/main.cpp app::Load,
  *                    src/common/game_info.cpp): render, frame rate, graphics
- *                    switches, the game folder ([game_dir]) and the
- *                    controller mapping ([padmap], native/input.cpp)
+ *                    switches, the touch layout's mode and steering, the game
+ *                    folder ([game_dir]) and the controller mapping ([padmap],
+ *                    native/input.cpp). The one place those settings live:
+ *                    the launcher edits it in place (TomlSettings) and the
+ *                    game's own menu saves into it (app::Save), each keeping
+ *                    the other's keys.
  *   layout.toml      [hud]: where the HUD's speedometer, minimap, race info
  *                    and EA Trax banner are moved (src/game/hud_layout.cpp)
  *
- * Both are rewritten at PLAY from the preferences; the engine does not write
- * them back. Touch layout positions live in their own preferences
- * ("nfsmw_touch"), written by the editor (TouchControllerView).
+ * SharedPreferences ("nfsmw") keep the launcher's own state: the game folder,
+ * the overlay's switches, HUD offsets and the controller mapping, which go
+ * into the files at PLAY. Touch layout positions live in their own
+ * preferences ("nfsmw_touch"), written by the editor (TouchControllerView).
  */
 final class Settings {
     // Game
     static final String K_GAME_DIR = "game_dir";
     // Display
-    static final String K_FPS = "show_fps";
+    static final String K_FPS = "fps_counter";
     static final String K_FPS_POS = "fps_position";   // native FpsPosition 0..5
     static final String K_FPS_USAGE = "fps_usage";
     static final String K_FPS_TEMPS = "fps_temps";
@@ -39,7 +43,7 @@ final class Settings {
     // Graphics
     static final String K_RENDER = "render_percent";  // 20..200, of the screen's height
     static final String K_AA = "anti_aliasing";       // 0 off, 1 FXAA, 2 SSAA
-    static final String K_ANISO = "aniso2";           // 0 (game's), 2, 4, 8, 16
+    static final String K_ANISO = "anisotropic_filtering";  // 0 (game's), 2, 4, 8, 16
     static final String K_FILTER = "screen_filter";   // 0 off .. 5 HDR
     static final String K_YELLOW = "yellow_tint";
     static final String K_REFLECT = "car_reflections";  // 0 full, 1 half, 2 quarter, 3 off
@@ -147,69 +151,79 @@ final class Settings {
         return p.getFloat(K_HUD_PREFIX + HUD_IDS[item] + (axis == 0 ? "_x" : "_y"), 0f);
     }
 
-    /** A TOML basic string. */
-    private static String str(String s) {
-        StringBuilder b = new StringBuilder("\"");
-        for (char ch : s.toCharArray()) {
-            if (ch == '"' || ch == '\\') b.append('\\');
-            b.append(ch);
+    /** The settings file's keys the launcher shows: the key, the preference it lived in before the file was the
+     *  place for it (taken over once), and the launcher's default. */
+    private static final Object[][] NATIVE_KEYS = {
+        {K_RENDER, K_RENDER, 67}, {K_FPS_CAP, K_FPS_CAP, 60}, {K_VSYNC, K_VSYNC, false},
+        {K_ANISO, "aniso2", 0}, {K_FPS, "show_fps", false}, {K_FPS_POS, K_FPS_POS, 2},
+        {K_FPS_USAGE, K_FPS_USAGE, true}, {K_FPS_TEMPS, K_FPS_TEMPS, true}, {K_WIDESCREEN, K_WIDESCREEN, true},
+        {"aspect_ratio", null, 0}, {K_AA, K_AA, 0}, {K_FILTER, K_FILTER, 0}, {K_YELLOW, K_YELLOW, false},
+        {K_REFLECT, K_REFLECT, 0}, {K_ROAD_REFLECT, K_ROAD_REFLECT, true}, {K_MOTION_BLUR, K_MOTION_BLUR, true},
+        {K_BLOOM, K_BLOOM, true}, {K_FOG, K_FOG, true}, {K_SHADOWS, K_SHADOWS, true},
+        {K_PARTICLES, K_PARTICLES, true}, {K_RAIN, K_RAIN, true}, {K_RAIN_DROPS, K_RAIN_DROPS, true},
+        {K_PRELOAD, K_PRELOAD, false}, {K_SKIP_MOVIES, K_SKIP_MOVIES, false}, {K_CHEAT_NOS, K_CHEAT_NOS, false},
+        {K_CHEAT_SB, K_CHEAT_SB, false}, {K_CHEAT_CASH, K_CHEAT_CASH, false}, {K_CHEAT_COPS, K_CHEAT_COPS, false},
+        {K_CHEAT_UNLOCK, K_CHEAT_UNLOCK, false}, {K_AUDIO_OUT, K_AUDIO_OUT, 0}, {K_LANGUAGE, K_LANGUAGE, "int"},
+        {K_PAD_MODE, K_PAD_MODE, MODE_STEERING}, {K_STEER, K_STEER, STEER_STICK}, {K_TILT_SENS, K_TILT_SENS, 5},
+    };
+
+    /** The header the launcher once wrote; the file is no longer rewritten at PLAY. */
+    private static final String OLD_HEADER = "# written by the launcher at PLAY (Settings.java); edits here are lost";
+
+    static File nativeFile(Context c) {
+        return new File(filesDir(c), "mostwanted.toml");
+    }
+
+    /** mostwanted.toml with every key the launcher shows: a key it lacks is the old preference's value (once, from
+     *  a launcher that kept them there) or the default. A broken file gives the defaults (and is kept as .bad). */
+    static TomlSettings nativeSettings(Context c) {
+        TomlSettings t = TomlSettings.load(nativeFile(c));
+        SharedPreferences p = prefs(c);
+        for (Object[] k : NATIVE_KEYS) {
+            String key = (String) k[0], pref = (String) k[1];
+            if (t.has(key)) continue;
+            Object v = k[2];
+            if (!t.recovered() && pref != null && p.contains(pref)) {
+                if (v instanceof Boolean) v = p.getBoolean(pref, (Boolean) v);
+                else if (v instanceof Integer) v = p.getInt(pref, (Integer) v);
+                else v = p.getString(pref, (String) v);
+            }
+            t.put(key, v);
         }
-        return b.append('"').toString();
+        return t;
     }
 
-    private static void bool(StringBuilder b, SharedPreferences p, String key, boolean def) {
-        b.append(key).append(" = ").append(p.getBoolean(key, def)).append('\n');
+    /** The overlay's mode, steering and tilt from the settings file (the in-game overlay, the editor). */
+    static int padMode(Context c) { return (int) nativeSettings(c).getInt(K_PAD_MODE, MODE_STEERING); }
+
+    static boolean widescreen(Context c) { return nativeSettings(c).getBool(K_WIDESCREEN, true); }
+
+    static int steer(Context c) { return (int) nativeSettings(c).getInt(K_STEER, STEER_STICK); }
+
+    static int tiltSens(Context c) { return (int) nativeSettings(c).getInt(K_TILT_SENS, 5); }
+
+    /** One key into the settings file, the rest of it as it is. */
+    static void putNative(Context c, String key, Object v) throws IOException {
+        TomlSettings t = nativeSettings(c);
+        t.put(key, v);
+        t.save(nativeFile(c));
     }
 
-    private static void num(StringBuilder b, String key, int v) {
-        b.append(key).append(" = ").append(v).append('\n');
-    }
-
+    /** At PLAY: the settings file with the game folder and the controller mapping from the preferences, every other
+     *  key as the launcher and the game left it; layout.toml and perf from the preferences. */
     static void writeNativeFiles(Context c) throws IOException {
         SharedPreferences p = prefs(c);
         File dir = filesDir(c);
 
-        StringBuilder t = new StringBuilder("# written by the launcher at PLAY (Settings.java); edits here are lost\n");
-        t.append("defaults = 3\n");
-        t.append("game_dir = ").append(str(gameDir(c))).append('\n');
-        num(t, "render_percent", p.getInt(K_RENDER, 67));
-        num(t, "fps_cap", p.getInt(K_FPS_CAP, 60));
-        bool(t, p, K_VSYNC, false);
-        num(t, "anisotropic_filtering", p.getInt(K_ANISO, 0));
-        t.append("fps_counter = ").append(p.getBoolean(K_FPS, false)).append('\n');
-        num(t, "fps_position", p.getInt(K_FPS_POS, 2));
-        bool(t, p, K_FPS_USAGE, true);
-        bool(t, p, K_FPS_TEMPS, true);
-        bool(t, p, K_WIDESCREEN, true);
-        num(t, "aspect_ratio", 0);
-        num(t, "anti_aliasing", p.getInt(K_AA, 0));
-        num(t, "screen_filter", p.getInt(K_FILTER, 0));
-        bool(t, p, K_YELLOW, false);
-        num(t, "car_reflections", p.getInt(K_REFLECT, 0));
-        bool(t, p, K_ROAD_REFLECT, true);
-        bool(t, p, K_MOTION_BLUR, true);
-        bool(t, p, K_BLOOM, true);
-        bool(t, p, K_FOG, true);
-        bool(t, p, K_SHADOWS, true);
-        bool(t, p, K_PARTICLES, true);
-        bool(t, p, K_RAIN, true);
-        bool(t, p, K_RAIN_DROPS, true);
-        bool(t, p, K_PRELOAD, false);
-        bool(t, p, K_SKIP_MOVIES, false);
-        bool(t, p, K_CHEAT_NOS, false);
-        bool(t, p, K_CHEAT_SB, false);
-        bool(t, p, K_CHEAT_CASH, false);
-        bool(t, p, K_CHEAT_COPS, false);
-        bool(t, p, K_CHEAT_UNLOCK, false);
-        num(t, "audio_output", p.getInt(K_AUDIO_OUT, 0));
-        t.append("language = ").append(str(p.getString(K_LANGUAGE, "int"))).append('\n');
-        t.append("\n[padmap]\n");
-        for (int i = 0; i < XBOX_INPUTS.length; i++)
-            t.append(XBOX_INPUTS[i]).append(" = ").append(str(mapping(p, i))).append('\n');
-        num(t, "deadzone", p.getInt(K_DEADZONE, 8));
-        bool(t, p, K_INVERT_LY, false);
-        bool(t, p, K_INVERT_RY, false);
-        write(new File(dir, "mostwanted.toml"), t.toString());
+        TomlSettings t = nativeSettings(c);
+        t.removeLine(OLD_HEADER);
+        if (!t.has("defaults")) t.put("defaults", 3);
+        t.put("game_dir", gameDir(c));
+        for (int i = 0; i < XBOX_INPUTS.length; i++) t.put("padmap." + XBOX_INPUTS[i], mapping(p, i));
+        t.put("padmap." + K_DEADZONE, p.getInt(K_DEADZONE, 8));
+        t.put("padmap." + K_INVERT_LY, p.getBoolean(K_INVERT_LY, false));
+        t.put("padmap." + K_INVERT_RY, p.getBoolean(K_INVERT_RY, false));
+        t.save(nativeFile(c));
 
         StringBuilder l = new StringBuilder("# written by the launcher (HUD layout editor)\n[hud]\n");
         for (int i = 0; i < HUD_IDS.length; i++)

@@ -241,13 +241,13 @@ public final class TouchControllerView extends View {
         // the defaults change, start again from the new ones
         if (touchPrefs.getInt("layout_version", 0) != LAYOUT_VERSION)
             touchPrefs.edit().clear().putInt("layout_version", LAYOUT_VERSION).apply();
-        mode = prefs.getInt(Settings.K_PAD_MODE, Settings.MODE_STEERING);
-        steer = prefs.getInt(Settings.K_STEER, Settings.STEER_STICK);
+        mode = Settings.padMode(c);
+        steer = Settings.steer(c);
         autoHide = prefs.getBoolean(Settings.K_PAD_AUTOHIDE, true);
         haptic = prefs.getBoolean(Settings.K_HAPTIC, true);
         controlsVisible = !inGame || prefs.getBoolean(Settings.K_PAD, true);
         for (int m = 0; m < MODES; m++) opacity[m] = touchPrefs.getFloat("m" + m + "_opacity", .7f);
-        fullLockSin = (float) Math.sin(Math.toRadians(Settings.tiltAngle(prefs.getInt(Settings.K_TILT_SENS, 5))));
+        fullLockSin = (float) Math.sin(Math.toRadians(Settings.tiltAngle(Settings.tiltSens(c))));
         sensors = (SensorManager) c.getSystemService(Context.SENSOR_SERVICE);
         Sensor g = sensors == null ? null : sensors.getDefaultSensor(Sensor.TYPE_GRAVITY);
         accelOnly = g == null && sensors != null;
@@ -794,10 +794,19 @@ public final class TouchControllerView extends View {
     private void switchMode() {
         releaseAll();
         mode = (mode + 1) % MODES;
-        prefs.edit().putInt(Settings.K_PAD_MODE, mode).apply();
+        saveMode();
         useMode(mode);
         updateTilt();
         send();
+    }
+
+    /** The layout's mode is mostwanted.toml's pad_mode, the game's own menu's too. */
+    private void saveMode() {
+        try {
+            Settings.putNative(getContext(), Settings.K_PAD_MODE, mode);
+        } catch (java.io.IOException e) {
+            android.util.Log.w("nfsmw", "cannot save pad_mode: " + e.getMessage());
+        }
     }
 
     // -------------------------------------------------------------- to native
@@ -998,7 +1007,7 @@ public final class TouchControllerView extends View {
                 }
             }
             ed.apply();
-            prefs.edit().putInt(Settings.K_PAD_MODE, mode).apply();
+            saveMode();
         }
         if (!inGame) {
             onEditorDone.run();

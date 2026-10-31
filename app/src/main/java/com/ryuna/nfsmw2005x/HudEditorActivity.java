@@ -95,7 +95,7 @@ public class HudEditorActivity extends Activity {
 
         @Override
         protected void onSizeChanged(int w, int h, int ow, int oh) {
-            float aspect = mPrefs.getBoolean(Settings.K_WIDESCREEN, true) ? Math.max((float) w / h, 4f / 3f) : 4f / 3f;
+            float aspect = Settings.widescreen(getContext()) ? Math.max((float) w / h, 4f / 3f) : 4f / 3f;
             fw = Math.min(w, h * aspect);
             fh = fw / aspect;
             fx = (w - fw) / 2;

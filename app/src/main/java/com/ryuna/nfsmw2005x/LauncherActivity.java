@@ -19,6 +19,7 @@ import android.view.InputDevice;
 import android.view.View;
 import android.widget.EditText;
 import java.io.File;
+import java.io.IOException;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -34,6 +35,8 @@ public class LauncherActivity extends Activity {
     private static final int REQ_TREE = 1, REQ_ISO = 2;
 
     private SharedPreferences mPrefs;
+    private TomlSettings mToml;
+    private long mTomlStamp;
     private UiKit ui;
     private EditText mDir;
     private TextView mDirStatus, mPadStatus;
@@ -48,6 +51,7 @@ public class LauncherActivity extends Activity {
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
         mPrefs = Settings.prefs(this);
         ui = new UiKit(this);
+        loadNative();
         setContentView(build());
         refreshDir();
         android.view.WindowInsetsController c = getWindow().getInsetsController();
@@ -60,6 +64,11 @@ public class LauncherActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // back from the game, whose menu may have changed the settings file
+        if (Settings.nativeFile(this).lastModified() != mTomlStamp) {
+            loadNative();
+            setContentView(build());
+        }
         refreshDir();               // back from the permission screen
         refreshPads();
     }
@@ -166,24 +175,24 @@ public class LauncherActivity extends Activity {
         c.addView(ui.gap(6));
         c.addView(ui.secondary("Edit HUD position", v -> startActivity(new Intent(this, HudEditorActivity.class))));
         c.addView(ui.toggle("On-screen controller", null, mPrefs.getBoolean(Settings.K_PAD, true),
-                v -> put(Settings.K_PAD, v)));
+                v -> pref(Settings.K_PAD, v)));
         c.addView(ui.segmented("Layout", "Full: the original Xbox controller. Drive: steering, pedals, nitrous, e-brake, Speedbreaker.",
                 new String[] {"Full controller", "Drive"}, new int[] {Settings.MODE_FULL, Settings.MODE_STEERING},
-                mPrefs.getInt(Settings.K_PAD_MODE, Settings.MODE_STEERING), v -> put(Settings.K_PAD_MODE, v)));
+                num(Settings.K_PAD_MODE, Settings.MODE_STEERING), v -> put(Settings.K_PAD_MODE, v)));
         c.addView(ui.segmented("Steering (Drive layout)", "Stick: analog. Arrows: two big buttons. Tilt: turn the phone like a wheel.",
                 new String[] {"Stick", "Arrows", "Tilt"},
                 new int[] {Settings.STEER_STICK, Settings.STEER_ARROWS, Settings.STEER_TILT},
-                mPrefs.getInt(Settings.K_STEER, Settings.STEER_STICK), v -> put(Settings.K_STEER, v)));
+                num(Settings.K_STEER, Settings.STEER_STICK), v -> put(Settings.K_STEER, v)));
         c.addView(ui.slider("Tilt sensitivity", "Further right, less tilt is needed to steer all the way.",
-                1, 10, mPrefs.getInt(Settings.K_TILT_SENS, 5),
+                1, 10, num(Settings.K_TILT_SENS, 5),
                 s -> s + " · full lock at " + Math.round(Settings.tiltAngle(s)) + "°",
                 v -> put(Settings.K_TILT_SENS, v)));
         c.addView(ui.toggle("Hide with a controller", "Touch controls go away while a physical controller is used; touch the screen to bring them back.",
-                mPrefs.getBoolean(Settings.K_PAD_AUTOHIDE, true), v -> put(Settings.K_PAD_AUTOHIDE, v)));
+                mPrefs.getBoolean(Settings.K_PAD_AUTOHIDE, true), v -> pref(Settings.K_PAD_AUTOHIDE, v)));
         c.addView(ui.toggle("Button feedback", "A short tick when a touch button is pressed.",
-                mPrefs.getBoolean(Settings.K_HAPTIC, true), v -> put(Settings.K_HAPTIC, v)));
+                mPrefs.getBoolean(Settings.K_HAPTIC, true), v -> pref(Settings.K_HAPTIC, v)));
         c.addView(ui.toggle("Vibration", "Crashes and takedowns rumble the controller; with none connected, the phone vibrates.",
-                mPrefs.getBoolean(Settings.K_VIBRATE, true), v -> put(Settings.K_VIBRATE, v)));
+                mPrefs.getBoolean(Settings.K_VIBRATE, true), v -> pref(Settings.K_VIBRATE, v)));
         c.addView(ui.secondary("Test vibration", v -> testVibration()));
         return c;
     }
@@ -203,23 +212,23 @@ public class LauncherActivity extends Activity {
         c.addView(ui.section("GAMEPLAY"));
         c.addView(ui.segmented("Language", "The recompilation's own text and prompts. Indonesian also translates the game's menus.",
                 new String[] {"English", "Indonesia"}, new int[] {0, 1},
-                "ind".equals(mPrefs.getString(Settings.K_LANGUAGE, "int")) ? 1 : 0,
-                v -> mPrefs.edit().putString(Settings.K_LANGUAGE, v == 1 ? "ind" : "int").apply()));
+                "ind".equals(mToml.getString(Settings.K_LANGUAGE, "int")) ? 1 : 0,
+                v -> put(Settings.K_LANGUAGE, v == 1 ? "ind" : "int")));
         c.addView(ui.toggle("Skip movies", "The intro and the game's videos end as they start (the engine's cutscenes still play).",
-                mPrefs.getBoolean(Settings.K_SKIP_MOVIES, false), v -> put(Settings.K_SKIP_MOVIES, v)));
+                flag(Settings.K_SKIP_MOVIES, false), v -> put(Settings.K_SKIP_MOVIES, v)));
         TextView head = ui.section("▸ CHEATS");
         c.addView(head);
         LinearLayout body = ui.column();
         body.setVisibility(View.GONE);
-        body.addView(ui.toggle("Infinite nitrous", null, mPrefs.getBoolean(Settings.K_CHEAT_NOS, false),
+        body.addView(ui.toggle("Infinite nitrous", null, flag(Settings.K_CHEAT_NOS, false),
                 v -> put(Settings.K_CHEAT_NOS, v)));
-        body.addView(ui.toggle("Infinite speedbreaker", null, mPrefs.getBoolean(Settings.K_CHEAT_SB, false),
+        body.addView(ui.toggle("Infinite speedbreaker", null, flag(Settings.K_CHEAT_SB, false),
                 v -> put(Settings.K_CHEAT_SB, v)));
         body.addView(ui.toggle("Max cash", "Keeps the career's cash at 9,999,999; it ends up in the save.",
-                mPrefs.getBoolean(Settings.K_CHEAT_CASH, false), v -> put(Settings.K_CHEAT_CASH, v)));
+                flag(Settings.K_CHEAT_CASH, false), v -> put(Settings.K_CHEAT_CASH, v)));
         body.addView(ui.toggle("No police", "No new cops or pursuits; one already on goes on.",
-                mPrefs.getBoolean(Settings.K_CHEAT_COPS, false), v -> put(Settings.K_CHEAT_COPS, v)));
-        body.addView(ui.toggle("Unlock all", "Every car, part and race.", mPrefs.getBoolean(Settings.K_CHEAT_UNLOCK, false),
+                flag(Settings.K_CHEAT_COPS, false), v -> put(Settings.K_CHEAT_COPS, v)));
+        body.addView(ui.toggle("Unlock all", "Every car, part and race.", flag(Settings.K_CHEAT_UNLOCK, false),
                 v -> put(Settings.K_CHEAT_UNLOCK, v)));
         c.addView(body);
         head.setOnClickListener(v -> {
@@ -235,20 +244,20 @@ public class LauncherActivity extends Activity {
         c.addView(ui.section("DISPLAY"));
         c.addView(ui.toggle("Widescreen", "On: the whole screen, the game's widescreen mode widened to the phone (Hor+). "
                 + "Off: the Xbox's 4:3 picture with side bars.",
-                mPrefs.getBoolean(Settings.K_WIDESCREEN, true), v -> put(Settings.K_WIDESCREEN, v)));
+                flag(Settings.K_WIDESCREEN, true), v -> put(Settings.K_WIDESCREEN, v)));
         c.addView(ui.choice("Max frame rate", "60 is the console's speed for menus and films.",
                 new String[] {"30", "60", "90", "120", "Refresh rate", "Unlimited"}, new int[] {30, 60, 90, 120, 1, 0},
-                mPrefs.getInt(Settings.K_FPS_CAP, 60), v -> put(Settings.K_FPS_CAP, v)));
+                num(Settings.K_FPS_CAP, 60), v -> put(Settings.K_FPS_CAP, v)));
         c.addView(ui.toggle("Vertical sync", "Waits for the screen's refresh: no tearing, a little more latency.",
-                mPrefs.getBoolean(Settings.K_VSYNC, false), v -> put(Settings.K_VSYNC, v)));
+                flag(Settings.K_VSYNC, false), v -> put(Settings.K_VSYNC, v)));
         c.addView(ui.toggle("Show FPS", "Frames per second in a corner of the game.",
-                mPrefs.getBoolean(Settings.K_FPS, false), v -> put(Settings.K_FPS, v)));
+                flag(Settings.K_FPS, false), v -> put(Settings.K_FPS, v)));
         c.addView(ui.choice("FPS position", null,
                 new String[] {"Top", "Top left", "Top right", "Bottom left", "Bottom", "Bottom right"},
-                new int[] {0, 1, 2, 3, 4, 5}, mPrefs.getInt(Settings.K_FPS_POS, 2), v -> put(Settings.K_FPS_POS, v)));
-        c.addView(ui.toggle("FPS: CPU / GPU load", null, mPrefs.getBoolean(Settings.K_FPS_USAGE, true),
+                new int[] {0, 1, 2, 3, 4, 5}, num(Settings.K_FPS_POS, 2), v -> put(Settings.K_FPS_POS, v)));
+        c.addView(ui.toggle("FPS: CPU / GPU load", null, flag(Settings.K_FPS_USAGE, true),
                 v -> put(Settings.K_FPS_USAGE, v)));
-        c.addView(ui.toggle("FPS: temperatures", null, mPrefs.getBoolean(Settings.K_FPS_TEMPS, true),
+        c.addView(ui.toggle("FPS: temperatures", null, flag(Settings.K_FPS_TEMPS, true),
                 v -> put(Settings.K_FPS_TEMPS, v)));
         return c;
     }
@@ -257,33 +266,33 @@ public class LauncherActivity extends Activity {
         LinearLayout c = ui.card();
         c.addView(ui.section("GRAPHICS"));
         c.addView(ui.slider("Render resolution", "Of the screen's height. 67% is about 720p on a 1080p phone.",
-                20, 200, mPrefs.getInt(Settings.K_RENDER, 67), v -> v + " %", v -> put(Settings.K_RENDER, v)));
+                20, 200, num(Settings.K_RENDER, 67), v -> v + " %", v -> put(Settings.K_RENDER, v)));
         c.addView(ui.choice("Anti-aliasing", "FXAA: a filter over the picture. SSAA: twice the height, much slower.",
                 new String[] {"Off", "FXAA", "SSAA 2x"}, new int[] {0, 1, 2},
-                mPrefs.getInt(Settings.K_AA, 0), v -> put(Settings.K_AA, v)));
+                num(Settings.K_AA, 0), v -> put(Settings.K_AA, v)));
         c.addView(ui.choice("Anisotropic filtering", "Sharper textures seen at an angle, like the road ahead.",
                 new String[] {"Game default", "2x", "4x", "8x", "16x"}, new int[] {0, 2, 4, 8, 16},
-                mPrefs.getInt(Settings.K_ANISO, 0), v -> put(Settings.K_ANISO, v)));
+                num(Settings.K_ANISO, 0), v -> put(Settings.K_ANISO, v)));
         c.addView(ui.toggle("Yellow filter", "The game's yellow colour grading. Off: neutral colours.",
-                mPrefs.getBoolean(Settings.K_YELLOW, false), v -> put(Settings.K_YELLOW, v)));
+                flag(Settings.K_YELLOW, false), v -> put(Settings.K_YELLOW, v)));
         c.addView(ui.choice("Car reflections", "How often the cars' reflection is drawn; about 3% of the GPU's frame.",
                 new String[] {"Full", "Half", "Quarter", "Off"}, new int[] {0, 1, 2, 3},
-                mPrefs.getInt(Settings.K_REFLECT, 0), v -> put(Settings.K_REFLECT, v)));
+                num(Settings.K_REFLECT, 0), v -> put(Settings.K_REFLECT, v)));
         c.addView(ui.toggle("Road reflections", "The wet road's reflection.",
-                mPrefs.getBoolean(Settings.K_ROAD_REFLECT, true), v -> put(Settings.K_ROAD_REFLECT, v)));
+                flag(Settings.K_ROAD_REFLECT, true), v -> put(Settings.K_ROAD_REFLECT, v)));
         c.addView(ui.toggle("Motion blur", "The blur by speed and the nitrous' radial blur.",
-                mPrefs.getBoolean(Settings.K_MOTION_BLUR, true), v -> put(Settings.K_MOTION_BLUR, v)));
-        c.addView(ui.toggle("Bloom", null, mPrefs.getBoolean(Settings.K_BLOOM, true), v -> put(Settings.K_BLOOM, v)));
-        c.addView(ui.toggle("Fog", null, mPrefs.getBoolean(Settings.K_FOG, true), v -> put(Settings.K_FOG, v)));
-        c.addView(ui.toggle("Shadows", null, mPrefs.getBoolean(Settings.K_SHADOWS, true), v -> put(Settings.K_SHADOWS, v)));
+                flag(Settings.K_MOTION_BLUR, true), v -> put(Settings.K_MOTION_BLUR, v)));
+        c.addView(ui.toggle("Bloom", null, flag(Settings.K_BLOOM, true), v -> put(Settings.K_BLOOM, v)));
+        c.addView(ui.toggle("Fog", null, flag(Settings.K_FOG, true), v -> put(Settings.K_FOG, v)));
+        c.addView(ui.toggle("Shadows", null, flag(Settings.K_SHADOWS, true), v -> put(Settings.K_SHADOWS, v)));
         c.addView(ui.toggle("Particle effects", "Tyre smoke, sparks, crash debris.",
-                mPrefs.getBoolean(Settings.K_PARTICLES, true), v -> put(Settings.K_PARTICLES, v)));
-        c.addView(ui.toggle("Falling rain", null, mPrefs.getBoolean(Settings.K_RAIN, true), v -> put(Settings.K_RAIN, v)));
-        c.addView(ui.toggle("Screen raindrops", null, mPrefs.getBoolean(Settings.K_RAIN_DROPS, true),
+                flag(Settings.K_PARTICLES, true), v -> put(Settings.K_PARTICLES, v)));
+        c.addView(ui.toggle("Falling rain", null, flag(Settings.K_RAIN, true), v -> put(Settings.K_RAIN, v)));
+        c.addView(ui.toggle("Screen raindrops", null, flag(Settings.K_RAIN_DROPS, true),
                 v -> put(Settings.K_RAIN_DROPS, v)));
         c.addView(ui.choice("Screen filter", null,
                 new String[] {"Off", "Sharpen", "Vivid", "Scanlines", "CRT", "HDR"}, new int[] {0, 1, 2, 3, 4, 5},
-                mPrefs.getInt(Settings.K_FILTER, 0), v -> put(Settings.K_FILTER, v)));
+                num(Settings.K_FILTER, 0), v -> put(Settings.K_FILTER, v)));
         return c;
     }
 
@@ -291,7 +300,7 @@ public class LauncherActivity extends Activity {
         LinearLayout c = ui.card();
         c.addView(ui.section("SOUND"));
         c.addView(ui.choice("Audio output", null, new String[] {"Automatic", "Stereo", "5.1 surround", "Mono"},
-                new int[] {0, 1, 2, 3}, mPrefs.getInt(Settings.K_AUDIO_OUT, 0), v -> put(Settings.K_AUDIO_OUT, v)));
+                new int[] {0, 1, 2, 3}, num(Settings.K_AUDIO_OUT, 0), v -> put(Settings.K_AUDIO_OUT, v)));
         return c;
     }
 
@@ -303,9 +312,9 @@ public class LauncherActivity extends Activity {
         body.setVisibility(View.GONE);
         body.addView(ui.summary("To test what each thing costs on your phone. The defaults are the recommended ones."));
         body.addView(ui.toggle("Shader preloading", "Builds the shaders of earlier runs at the start: fewer stutters the first minutes.",
-                mPrefs.getBoolean(Settings.K_PRELOAD, false), v -> put(Settings.K_PRELOAD, v)));
+                flag(Settings.K_PRELOAD, false), v -> put(Settings.K_PRELOAD, v)));
         body.addView(ui.toggle("Performance log", "A line a second in Android/data/com.ryuna.nfsmw2005x/files/logs: fps, CPU and GPU frame times.",
-                mPrefs.getBoolean(Settings.K_PERF_LOG, false), v -> put(Settings.K_PERF_LOG, v)));
+                mPrefs.getBoolean(Settings.K_PERF_LOG, false), v -> pref(Settings.K_PERF_LOG, v)));
         c.addView(body);
         head.setOnClickListener(v -> {
             boolean open = body.getVisibility() != View.VISIBLE;
@@ -317,9 +326,32 @@ public class LauncherActivity extends Activity {
 
     // ---------------------------------------------------------------- actions
 
-    private void put(String k, boolean v) { mPrefs.edit().putBoolean(k, v).apply(); }
+    /** The launcher's own state (not the game's). */
+    private void pref(String k, boolean v) { mPrefs.edit().putBoolean(k, v).apply(); }
 
-    private void put(String k, int v) { mPrefs.edit().putInt(k, v).apply(); }
+    private boolean flag(String k, boolean def) { return mToml.getBool(k, def); }
+
+    private int num(String k, int def) { return (int) mToml.getInt(k, def); }
+
+    /** A setting of the game's, into mostwanted.toml at once, so the game's menu starts from it. */
+    private void put(String k, Object v) {
+        mToml.put(k, v);
+        try {
+            mToml.save(Settings.nativeFile(this));
+        } catch (IOException e) {
+            Toast.makeText(this, "Cannot save settings: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+        mTomlStamp = Settings.nativeFile(this).lastModified();
+    }
+
+    /** mostwanted.toml as it is now; a broken one leaves defaults and a .bad copy (Settings.nativeSettings). */
+    private void loadNative() {
+        mToml = Settings.nativeSettings(this);
+        mTomlStamp = Settings.nativeFile(this).lastModified();
+        if (mToml.recovered())
+            Toast.makeText(this, "mostwanted.toml was unreadable: defaults used, the old file kept as mostwanted.toml.bad",
+                           Toast.LENGTH_LONG).show();
+    }
 
     private String versionName() {
         try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; }

@@ -191,6 +191,12 @@ void Load() {
     toml::table t;
     try {
         t = toml::parse_file(File().string());
+    } catch (const toml::parse_error&) {
+        // defaults, the broken file kept beside for the player (the launcher says so too)
+        std::error_code ec;
+        std::filesystem::copy_file(File(), File().string() + ".bad", std::filesystem::copy_options::overwrite_existing,
+                                   ec);
+        return;
     } catch (...) {
         return;
     }
@@ -215,9 +221,23 @@ void Load() {
 
 const std::string& GameDirSetting() { return g_game_dir; }
 
+// the file is the launcher's too: our keys over what it holds ([padmap], save_dir, the overlay's, keys we do not know),
+// through a temporary file so a crash or the launcher never reads half of it
 void Save() {
-    std::ofstream f(File());
-    f << Table() << "\n";
+    toml::table t;
+    try {
+        t = toml::parse_file(File().string());
+    } catch (...) {
+    }
+    for (auto&& [key, value] : Table()) t.insert_or_assign(key, value);
+    std::filesystem::path tmp = File().string() + ".tmp";
+    {
+        std::ofstream f(tmp);
+        f << t << "\n";
+        if (!f) return;
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp, File(), ec);
 }
 
 void LogSettings() {
