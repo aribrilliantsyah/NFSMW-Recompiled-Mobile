@@ -4,7 +4,7 @@ An unofficial native Android port of the original Xbox version of *Need for Spee
 The game's x86 code is statically recompiled ahead of time to C++ with [XboxXBE-Recomp](https://github.com/TGP482/XboxXBE-Recomp), then built for arm64. Drawing goes through Vulkan, and windowing, input and audio through SDL3. No emulator is involved. The engine (Vulkan renderer, Direct3D 8 and DirectSound on the host, the game's patches) comes from [MostWanted-Android](https://github.com/RanggaCasper/MostWanted-Android) by RanggaCasper; the Android shell (launcher, ISO installer, touch controls and their editors, controller mapping) from nfsw-recompiled-mobile.
 
 > [!NOTE]
-> This project does not include any game assets. You must provide the files from your own legally acquired copy of the game to install or build.
+> This project does not include the game's data. You must provide the files from your own legally acquired copy of the game to install or build. The one exception is `ci/default.xbe.enc`, the game's executable encrypted for the release workflow, which only builds with the repository's secret key.
 
 > [!WARNING]
 > Work in progress. See [Status](#status).

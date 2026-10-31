@@ -1,6 +1,7 @@
 # Draws the settings menu's six category icons and the menus' SETTINGS icon (64x64 ARGB) into src/game/category_icons.inc.
 # 24-unit grid, 2-unit stroke, round caps/joins. White on transparent, except CHEATS (orange #F28C1C).
-# Icons are new drawings, not Rangga's gears-with-subject style.
+# Icons are new drawings, not Rangga's gears-with-subject style. Every one is strokes alone (poly, circle, rrect):
+# one width, round ends and corners, nothing filled.
 # usage: python tools/category_icons.py [preview.png]
 import math
 import os
@@ -19,148 +20,120 @@ ORANGE = (0xF2, 0x8C, 0x1C)  # cheats colour
 OUT = os.path.join(os.path.dirname(__file__), "..", "src", "game", "category_icons.inc")
 
 
-def canvas():
-    return Image.new("L", (S, S), 0), None
-
-
-def draw_on(img):
-    return ImageDraw.Draw(img)
-
-
 def u(v):
     """Grid units to canvas pixels."""
     return v * UNIT
 
 
-def ux(*vals):
-    """Multiple grid values to canvas list."""
-    return [v * UNIT for v in vals]
+# ---- strokes: every line STROKE wide with round caps and joins, nothing filled ----
+def disc(d, x, y):
+    """A round cap or join: a disc STROKE across at a canvas point."""
+    r = STROKE / 2
+    d.ellipse([x - r, y - r, x + r, y + r], fill=WHITE)
 
 
-# ---- Screen: monitor outline ----
+def poly(d, pts, closed=False):
+    """A stroked polyline through grid points, round caps and joins."""
+    cp = [(u(x), u(y)) for x, y in pts]
+    if closed:
+        cp.append(cp[0])
+    for a, b in zip(cp, cp[1:]):
+        d.line([a, b], fill=WHITE, width=round(STROKE))
+    for x, y in cp:
+        disc(d, x, y)
+
+
+def arc_pts(cx, cy, r, a0, a1, n=48):
+    """Grid points along a circle's arc, degrees clockwise on the screen from +x."""
+    return [(cx + r * math.cos(math.radians(a0 + (a1 - a0) * i / n)),
+             cy + r * math.sin(math.radians(a0 + (a1 - a0) * i / n))) for i in range(n + 1)]
+
+
+def circle(d, cx, cy, r):
+    poly(d, arc_pts(cx, cy, r, 0, 360, 96), closed=True)
+
+
+def rrect(d, x0, y0, x1, y1, r):
+    """A rounded rectangle's outline."""
+    pts = (arc_pts(x1 - r, y0 + r, r, 270, 360, 12) + arc_pts(x1 - r, y1 - r, r, 0, 90, 12)
+           + arc_pts(x0 + r, y1 - r, r, 90, 180, 12) + arc_pts(x0 + r, y0 + r, r, 180, 270, 12))
+    poly(d, pts, closed=True)
+
+
+def icon_canvas():
+    img = Image.new("L", (S, S), 0)
+    return img, ImageDraw.Draw(img)
+
+
+# ---- Screen: a monitor on its stand ----
 def icon_screen():
-    img = Image.new("L", (S, S), 0)
-    d = ImageDraw.Draw(img)
-    w = STROKE
-    # monitor body
-    d.rounded_rectangle(ux(4, 5, 20, 16), radius=u(1.5), outline=WHITE, width=round(w))
-    # stand neck
-    d.line(ux(12, 16, 12, 18.5), fill=WHITE, width=round(w))
-    # stand base
-    d.line(ux(8, 18.5, 16, 18.5), fill=WHITE, width=round(w))
-    # screen inner content: small play triangle
-    d.polygon([ux(10.5, 9), ux(10.5, 13), ux(14, 11)], fill=WHITE)
+    img, d = icon_canvas()
+    rrect(d, 3, 4, 21, 16, 2)
+    poly(d, [(12, 16), (12, 20)])
+    poly(d, [(8, 20), (16, 20)])
     return img
 
 
-# ---- Speed: speedometer/gauge ----
+# ---- Speed: a gauge, its needle well over ----
 def icon_speed():
-    img = Image.new("L", (S, S), 0)
-    d = ImageDraw.Draw(img)
-    w = STROKE
-    cx, cy, r = u(12), u(13), u(7)
-    # semicircle arc (bottom half open)
-    bbox = [cx - r, cy - r, cx + r, cy + r]
-    d.arc(bbox, 200, 340, fill=WHITE, width=round(w))
-    # tick marks at 220, 260, 300, 340 degrees
-    for angle_deg in (210, 240, 270, 300, 330):
-        a = math.radians(angle_deg)
-        x1, y1 = cx + (r - u(1.5)) * math.cos(a), cy + (r - u(1.5)) * math.sin(a)
-        x2, y2 = cx + (r - u(0.2)) * math.cos(a), cy + (r - u(0.2)) * math.sin(a)
-        d.line([x1, y1, x2, y2], fill=WHITE, width=round(w * 0.7))
-    # needle pointing to ~310 degrees (fast)
-    needle_a = math.radians(310)
-    nx, ny = cx + (r - u(3)) * math.cos(needle_a), cy + (r - u(3)) * math.sin(needle_a)
-    d.line([cx, cy, nx, ny], fill=WHITE, width=round(w * 0.9))
-    # centre dot
-    d.ellipse([cx - u(1), cy - u(1), cx + u(1), cy + u(1)], fill=WHITE)
+    img, d = icon_canvas()
+    poly(d, arc_pts(12, 15, 9, 180, 360))
+    poly(d, [(3, 15), (21, 15)])
+    poly(d, [(12, 15), (16.5, 9)])
     return img
 
 
-# ---- Visuals: sparkle/star ----
+# ---- Visuals: a four-point sparkle and a small one ----
 def icon_visuals():
-    img = Image.new("L", (S, S), 0)
-    d = ImageDraw.Draw(img)
-    cx, cy = u(12), u(12)
-    # four-point star
-    points = []
-    outer_r, inner_r = u(8), u(2.5)
+    img, d = icon_canvas()
+    cx, cy = 10.5, 13.5
+    pts = []
     for i in range(8):
-        angle = math.radians(i * 45 - 90)
-        r = outer_r if i % 2 == 0 else inner_r
-        points.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
-    d.polygon(points, fill=WHITE)
-    # small sparkle dots
-    for dx, dy in [(5.5, 5.5), (-5.5, -5.5), (5.5, -5.5), (-5.5, 5.5)]:
-        d.ellipse([cx + u(dx) - u(0.7), cy + u(dy) - u(0.7),
-                   cx + u(dx) + u(0.7), cy + u(dy) + u(0.7)], fill=WHITE)
+        a = math.radians(i * 45 - 90)
+        r = 8 if i % 2 == 0 else 2.2
+        pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    poly(d, pts, closed=True)
+    poly(d, [(19, 3), (19, 7)])
+    poly(d, [(17, 5), (21, 5)])
     return img
 
 
-# ---- Controls: gamepad ----
+# ---- Controls: a gamepad ----
 def icon_controls():
-    img = Image.new("L", (S, S), 0)
-    d = ImageDraw.Draw(img)
-    w = STROKE
-    # controller body outline
-    d.rounded_rectangle(ux(3, 8, 21, 17), radius=u(3), outline=WHITE, width=round(w))
-    # grips (small bumps at bottom)
-    d.arc(ux(3, 13, 9, 20), 0, 180, fill=WHITE, width=round(w))
-    d.arc(ux(15, 13, 21, 20), 0, 180, fill=WHITE, width=round(w))
-    # left d-pad cross
-    lx, ly = u(8), u(12)
-    hs = u(1)
-    d.line([lx - u(1.5), ly, lx + u(1.5), ly], fill=WHITE, width=round(w * 0.8))
-    d.line([lx, ly - u(1.5), lx, ly + u(1.5)], fill=WHITE, width=round(w * 0.8))
-    # right face buttons (4 dots)
-    rx, ry = u(16), u(12)
-    for ddx, ddy in [(0, -1.2), (0, 1.2), (-1.2, 0), (1.2, 0)]:
-        d.ellipse([rx + u(ddx) - u(0.5), ry + u(ddy) - u(0.5),
-                   rx + u(ddx) + u(0.5), ry + u(ddy) + u(0.5)], fill=WHITE)
+    img, d = icon_canvas()
+    rrect(d, 2, 7, 22, 18, 4.5)
+    poly(d, [(5.5, 12.5), (9.5, 12.5)])
+    poly(d, [(7.5, 10.5), (7.5, 14.5)])
+    poly(d, [(15.5, 11), (15.5, 11)])
+    poly(d, [(18, 13.5), (18, 13.5)])
     return img
 
 
-# ---- System: cog/gear ----
+# ---- System: a cog ----
 def icon_system():
-    img = Image.new("L", (S, S), 0)
-    d = ImageDraw.Draw(img)
-    cx, cy = u(12), u(12)
-    teeth = 8
-    outer_r, inner_r = u(8.5), u(6.5)
-    hole_r = u(3.5)
-    # draw gear with teeth
-    points = []
-    for i in range(teeth * 2):
-        angle = math.radians(i * 360 / (teeth * 2) - 90)
-        r = outer_r if i % 2 == 0 else inner_r
-        points.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
-    d.polygon(points, fill=WHITE)
-    # hole in centre
-    d.ellipse([cx - hole_r, cy - hole_r, cx + hole_r, cy + hole_r], fill=0)
-    # inner circle ring
-    ring_r = u(2)
-    d.ellipse([cx - ring_r, cy - ring_r, cx + ring_r, cy + ring_r], fill=WHITE)
+    img, d = icon_canvas()
+    circle(d, 12, 12, 6)
+    circle(d, 12, 12, 2)
+    for i in range(8):
+        a = math.radians(i * 45)
+        poly(d, [(12 + 6 * math.cos(a), 12 + 6 * math.sin(a)), (12 + 9 * math.cos(a), 12 + 9 * math.sin(a))])
     return img
 
 
-# ---- Cheats: lightning bolt (orange) ----
+# ---- Cheats: a lightning bolt (orange) ----
 def icon_cheats():
-    img = Image.new("L", (S, S), 0)
-    d = ImageDraw.Draw(img)
-    # lightning bolt shape
-    bolt = [ux(13, 3), ux(7, 13), ux(11, 13), ux(10, 21), ux(17, 10), ux(13, 10), ux(15, 3)]
-    d.polygon([p for p in bolt], fill=WHITE)
+    img, d = icon_canvas()
+    poly(d, [(13, 2), (5, 13), (11, 13), (10, 22), (19, 10), (13, 10), (14, 2)], closed=True)
     return img
+
 
 # ---- Settings (the main and pause menus' icon beside OPTIONS): three sliders ----
 def icon_settings():
-    img = Image.new("L", (S, S), 0)
-    d = ImageDraw.Draw(img)
-    w = round(STROKE)
-    for y, knob in ((6, 15), (12, 8), (18, 13)):
-        d.line(ux(4, y, 20, y), fill=WHITE, width=w)
-        d.ellipse([u(knob) - u(2.2), u(y) - u(2.2), u(knob) + u(2.2), u(y) + u(2.2)], fill=WHITE)
-        d.ellipse([u(knob) - u(1), u(y) - u(1), u(knob) + u(1), u(y) + u(1)], fill=0)
+    img, d = icon_canvas()
+    for y, knob in ((5, 15), (12, 8), (19, 13)):
+        poly(d, [(3, y), (knob - 2, y)])
+        poly(d, [(knob + 2, y), (21, y)])
+        circle(d, knob, y, 2)
     return img
 
 

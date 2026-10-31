@@ -236,7 +236,7 @@ const std::vector<Row> kControlsRows = {
     {Kind::Number, kOpacity, "Opacity"},
     {Kind::Number, kSize, "Size"},
     {Kind::Action, kEditButtons, "Edit buttons"},
-    {Kind::Action, kEditHud, "Edit HUD"},
+    {Kind::Action, kEditHud, "Edit HUD (next start)"},
 };
 
 const std::vector<Row> kSystemRows = {

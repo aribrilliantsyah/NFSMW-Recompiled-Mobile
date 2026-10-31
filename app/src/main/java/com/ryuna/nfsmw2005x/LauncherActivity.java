@@ -631,7 +631,7 @@ public class LauncherActivity extends Activity {
         c.addView(ui.gap(6));
         c.addView(ui.secondary("Edit buttons", v -> startActivity(new Intent(this, EditorActivity.class))));
         c.addView(ui.gap(6));
-        c.addView(ui.secondary("Edit HUD", v -> startActivity(new Intent(this, HudEditorActivity.class))));
+        c.addView(ui.secondary("Edit HUD (next start)", v -> startActivity(new Intent(this, HudEditorActivity.class))));
         // the launcher's own: not in the game's menu
         c.addView(ui.toggle("On-screen controller", null, mPrefs.getBoolean(Settings.K_PAD, true),
                 v -> pref(Settings.K_PAD, v)));

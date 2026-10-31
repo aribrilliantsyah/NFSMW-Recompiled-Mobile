@@ -136,7 +136,7 @@ public class HudEditorActivity extends Activity {
             button(c, cancel, "CANCEL");
             button(c, done, "DONE");
             text.setColor(0xFF9A9A9A);
-            c.drawText("Drag the HUD's boxes where they go", getWidth() / 2f, reset.bottom + dp(20), text);
+            c.drawText("Drag the HUD's boxes where they go; the game takes them at its next start", getWidth() / 2f, reset.bottom + dp(20), text);
         }
 
         private void button(Canvas c, RectF r, String label) {

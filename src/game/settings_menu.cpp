@@ -418,7 +418,9 @@ void Step(X86Context& ctx, uint32_t widget, uint32_t message) {
     if (!r || r->kind == settings::Kind::Action) return;
     settings::Value(*r, message == kLeft ? -1 : 1);
     CallThis(ctx, widget, R32(R32(widget) + kBlinkSlot), {message});
-    kernel::G<uint8_t>(widget + kWidgetChanged) = 1;
+    // saved already (settings::Value): never the game's changed mark, whose leaving prompt offers a discard that
+    // could undo nothing
+    kernel::G<uint8_t>(widget + kWidgetChanged) = 0;
     RedrawAll(ctx);
 }
 
