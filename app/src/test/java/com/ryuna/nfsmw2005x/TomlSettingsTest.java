@@ -108,6 +108,12 @@ public class TomlSettingsTest {
             "[keys]\nup = \"W\"\n[keys.up]\n",        // a value reopened as a table
             "[a]\n[a.b]\n[a]\n",                      // a table twice, sub-table between
             "a.b = 1\na.b.c = 2\n",                   // a value used as a table
+            "x = 07:32\n",                            // a local time with no seconds
+            "x = 1979-05-27T07:32Z\n",                // a date-time with no seconds
+            "y = 2026-02-31\n",                       // no 31st of February
+            "y = 2026-02-29\n",                       // 2026 is no leap year
+            "y = 1900-02-29\n",                       // nor is 1900
+            "y = 2026-04-31\n",                       // April has 30 days
         };
         for (String b : bad) {
             File f = tmp.newFile();
@@ -128,6 +134,8 @@ public class TomlSettingsTest {
             "a.b = 1\na.c = 2\n[x]\ny.z = 1\n",
             "\"quoted key\" = 1\n'lit' = 2\nsite.\"google.com\" = true\n",
             "[a.b]\n[a]\nx = 1\n",                     // a parent opened after its sub-table
+            "y = 2024-02-29\nz = 2000-02-29\n",        // leap days
+            "\"padmap.a\" = 1\npadmap.a = 2\n",        // two paths: one key with a dot, and a in padmap
         };
         for (String g : good) {
             File f = tmp.newFile();
@@ -153,6 +161,31 @@ public class TomlSettingsTest {
         assertEquals("big = 9223372036854775807\npadmap.a = \"y\"\npadmap.b = \"z\"\n",
                      new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
         assertFalse(TomlSettings.load(f).recovered());
+    }
+
+    @Test
+    public void quotedDotIsOneSegment() throws Exception {
+        File f = tmp.newFile();
+        Files.write(f.toPath(), "\"padmap.a\" = \"literal\"\n\n[padmap]\na = \"nested\"\n".getBytes(StandardCharsets.UTF_8));
+        TomlSettings t = TomlSettings.load(f);
+        assertFalse(t.recovered());
+        // the API's "padmap.a" is the nested path, never the one key whose name holds a dot
+        assertEquals("nested", t.getString("padmap.a", ""));
+        t.put("padmap.a", "changed");
+        t.save(f);
+        assertEquals("\"padmap.a\" = \"literal\"\n\n[padmap]\na = \"changed\"\n",
+                     new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+
+        // with only the quoted key there, put adds the nested one as a table entry, not over the quoted key
+        File g = tmp.newFile();
+        Files.write(g.toPath(), "\"padmap.a\" = \"literal\"\n".getBytes(StandardCharsets.UTF_8));
+        TomlSettings u = TomlSettings.load(g);
+        assertFalse(u.has("padmap.a"));
+        u.put("padmap.a", "nested");
+        u.save(g);
+        assertEquals("\"padmap.a\" = \"literal\"\n\n[padmap]\na = \"nested\"\n",
+                     new String(Files.readAllBytes(g.toPath()), StandardCharsets.UTF_8));
+        assertFalse(TomlSettings.load(g).recovered());
     }
 
     @Test

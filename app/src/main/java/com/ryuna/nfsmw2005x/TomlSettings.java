@@ -22,16 +22,17 @@ import java.util.List;
  * checked, not the values.
  */
 final class TomlSettings {
-    /** One line (or one entry over lines) of the file; key null for a comment, a blank or a table header. */
+    /** One line (or one entry over lines) of the file; path null for a comment, a blank or a table header. */
     private static final class Line {
         String text;
-        final String table, key;
-        final String lead;  // the entry's text up to its value ("  key = "), kept when the value is replaced
-        Object value;       // Boolean, Long, String, or null for a value of another type
-        Line(String text, String table, String key, String lead, Object value) {
+        final List<Object> scope;  // the table it is in, by decoded path; an array of tables' element an Integer
+        final List<Object> path;   // an entry's full decoded path (scope + its key's segments), else null
+        final String lead;         // the entry's text up to its value ("  key = "), kept when the value is replaced
+        Object value;              // Boolean, Long, String, or null for a value of another type
+        Line(String text, List<Object> scope, List<Object> path, String lead, Object value) {
             this.text = text;
-            this.table = table;
-            this.key = key;
+            this.scope = scope;
+            this.path = path;
             this.lead = lead;
             this.value = value;
         }
@@ -83,7 +84,8 @@ final class TomlSettings {
         return l != null && l.value instanceof String ? (String) l.value : def;
     }
 
-    /** key, or table.key for a key in [table]; v a Boolean, an integer or a String. */
+    /** key a path, its segments joined by dots: "bloom", "padmap.a" (the entry a in table padmap, however the file
+     *  spells it); v a Boolean, an integer or a String. */
     void put(String key, Object v) {
         Object value = v instanceof Number ? (Object) ((Number) v).longValue() : v;
         if (!(value instanceof Boolean || value instanceof Long || value instanceof String))
@@ -94,22 +96,24 @@ final class TomlSettings {
             l.value = value;
             return;
         }
-        int dot = key.indexOf('.');
-        String table = dot < 0 ? "" : key.substring(0, dot), name = dot < 0 ? key : key.substring(dot + 1);
-        // a table the file makes with dotted keys at the top ("padmap.a = ..."), not with a header: one more such key
-        for (Line o : lines)
-            if (!table.isEmpty() && o.key != null && o.table.isEmpty() && o.key.startsWith(table + ".")) {
-                table = "";
-                name = key;
-                break;
-            }
-        String lead = name + " = ";
-        lines.add(insertAt(table), new Line(lead + format(value), table, name, lead, value));
+        List<Object> path = path(key);
+        List<Object> table = path.subList(0, path.size() - 1);
+        // in the table's [header]; else with the file's dotted keys for it at the top ("padmap.a = ..."); else a new
+        // [header] (a top-level key: before the first header)
+        boolean header = false, dotted = false;
+        for (Line o : lines) {
+            if (o.path == null && isHeader(o.text) && o.scope.equals(table)) header = true;
+            if (o.path != null && o.scope.isEmpty() && o.path.size() > table.size()
+                    && o.path.subList(0, table.size()).equals(table)) dotted = true;
+        }
+        List<Object> scope = table.isEmpty() || header || !dotted ? new ArrayList<>(table) : new ArrayList<>();
+        String lead = keyText(path.subList(scope.size(), path.size())) + " = ";
+        lines.add(insertAt(scope), new Line(lead + format(value), scope, path, lead, value));
     }
 
     /** Drops every line that is exactly text (an old comment). */
     void removeLine(String text) {
-        lines.removeIf(l -> l.key == null && l.text.equals(text));
+        lines.removeIf(l -> l.path == null && l.text.equals(text));
     }
 
     /** Written to a temporary file renamed over f, so a reader never sees half of it. */
@@ -125,21 +129,39 @@ final class TomlSettings {
 
     // ------------------------------------------------------------------ inside
 
-    /** key is the entry's full path: "bloom", "padmap.a" (in [padmap], or a dotted key padmap.a at the top). */
+    /** The API's dotted key as a path. */
+    private static List<Object> path(String key) {
+        return new ArrayList<>(java.util.Arrays.asList((Object[]) key.split("\\.", -1)));
+    }
+
     private Line find(String key) {
+        List<Object> path = path(key);
         for (Line l : lines)
-            if (l.key != null && (l.table.isEmpty() ? l.key : l.table + "." + l.key).equals(key)) return l;
+            if (path.equals(l.path)) return l;
         return null;
     }
 
-    /** A new top-level key goes before the first table (and the blanks before it), a table's after its last key;
-     *  a table not in the file yet is added at the end. */
-    private int insertAt(String table) {
+    /** Segments as a TOML key: bare where they can be, else quoted. */
+    private static String keyText(List<Object> segs) {
+        StringBuilder b = new StringBuilder();
+        for (Object o : segs) {
+            String s = (String) o;
+            if (b.length() > 0) b.append('.');
+            boolean bare = !s.isEmpty();
+            for (int i = 0; i < s.length() && bare; i++) bare = isBareKeyChar(s.charAt(i));
+            b.append(bare ? s : format(s));
+        }
+        return b.toString();
+    }
+
+    /** A new top-level entry goes before the first table header (and the blanks before it), a table's after its last
+     *  entry; a table not in the file yet is added at the end. */
+    private int insertAt(List<Object> table) {
         int header = -1;
         for (int i = 0; i < lines.size() && header < 0; i++) {
             Line l = lines.get(i);
-            if (l.key != null || !isHeader(l.text)) continue;
-            if (table.isEmpty() || l.table.equals(table)) header = i;
+            if (l.path != null || !isHeader(l.text)) continue;
+            if (table.isEmpty() || l.scope.equals(table)) header = i;
         }
         if (table.isEmpty()) {
             int at = header < 0 ? lines.size() : header;
@@ -148,13 +170,13 @@ final class TomlSettings {
         }
         if (header < 0) {
             if (!lines.isEmpty() && !lines.get(lines.size() - 1).text.trim().isEmpty())
-                lines.add(new Line("", "", null, null, null));
-            lines.add(new Line("[" + table + "]", table, null, null, null));
+                lines.add(new Line("", new ArrayList<>(), null, null, null));
+            lines.add(new Line("[" + keyText(table) + "]", table, null, null, null));
             return lines.size();
         }
         int at = header + 1;
-        for (int i = header + 1; i < lines.size() && lines.get(i).table.equals(table); i++)
-            if (lines.get(i).key != null) at = i + 1;
+        for (int i = header + 1; i < lines.size() && lines.get(i).scope.equals(table); i++)
+            if (lines.get(i).path != null) at = i + 1;
         return at;
     }
 
@@ -165,20 +187,19 @@ final class TomlSettings {
     /** Builds the lines, an entry whose value spans lines (an array, a multi-line string) as one, and turns down a
      *  file outside the subset the class comment names. */
     private void parse(String s) {
-        // every path defined so far, its segments joined by '\0', an array of tables' elements told apart by
-        // "#<n>" after its segment: what it is (a table by header 'h', by dotted key 'd' or as a header's parent
-        // 'p', a value 'v', an array of tables 'a')
-        java.util.Map<String, Character> defined = new java.util.HashMap<>();
-        java.util.Map<String, Integer> elements = new java.util.HashMap<>();   // an array of tables: its elements
-        String scope = "";          // the current table's resolved path
-        String table = "";          // its name as find() matches it; "[[..." when under an array of tables
+        // every path defined so far, by decoded segments (an array of tables' element an Integer after its name):
+        // what it is (a table by header 'h', by dotted key 'd' or as a header's parent 'p', a value 'v', an array of
+        // tables 'a')
+        java.util.Map<List<Object>, Character> defined = new java.util.HashMap<>();
+        java.util.Map<List<Object>, Integer> elements = new java.util.HashMap<>();   // an array of tables: its count
+        List<Object> scope = new ArrayList<>();     // the current table
         int p = 0, n = s.length();
         while (p < n) {
             int eol = eol(s, p);
             String raw = s.substring(p, eol);
             String t = raw.trim();
             if (t.isEmpty() || t.startsWith("#")) {
-                lines.add(new Line(stripCr(raw), table, null, null, null));
+                lines.add(new Line(stripCr(raw), scope, null, null, null));
                 p = next(s, eol);
                 continue;
             }
@@ -193,24 +214,21 @@ final class TomlSettings {
                 String rest = s.substring(q, eol).trim();
                 if (!(rest.isEmpty() || rest.startsWith("#"))) throw new IllegalArgumentException("bad table header: " + raw);
                 // the parents: tables (made here if new), an array of tables standing for its last element
-                String path = "";
+                List<Object> path = new ArrayList<>();
                 for (int i = 0; i < name.size() - 1; i++) path = step(defined, elements, path, name.get(i), 'p', raw);
-                String last = name.get(name.size() - 1);
-                String full = path.isEmpty() ? last : path + "\u0000" + last;
+                List<Object> full = with(path, name.get(name.size() - 1));
                 Character was = defined.get(full);
                 if (array) {
                     if (was != null && was != 'a') throw new IllegalArgumentException("not an array of tables: " + raw);
                     defined.put(full, 'a');
-                    int k = elements.merge(full, 1, Integer::sum) - 1;
-                    scope = full + "#" + k;
+                    scope = with(full, elements.merge(full, 1, Integer::sum) - 1);
                 } else {
                     // a table only its sub-tables' headers made may be opened once; any other is defined twice
                     if (was != null && was != 'p') throw new IllegalArgumentException("table twice: " + raw);
                     defined.put(full, 'h');
                     scope = full;
                 }
-                table = scope.contains("#") ? "[[" + scope : String.join(".", name);
-                lines.add(new Line(stripCr(raw), table, null, null, null));
+                lines.add(new Line(stripCr(raw), scope, null, null, null));
                 p = next(s, eol);
                 continue;
             }
@@ -221,10 +239,9 @@ final class TomlSettings {
             q++;
             while (q < eol && (s.charAt(q) == ' ' || s.charAt(q) == '\t')) q++;
             if (q >= eol) throw new IllegalArgumentException("no value: " + raw);
-            String path = scope;
+            List<Object> path = scope;
             for (int i = 0; i < name.size() - 1; i++) path = step(defined, elements, path, name.get(i), 'd', raw);
-            String last = name.get(name.size() - 1);
-            String full = path.isEmpty() ? last : path + "\u0000" + last;
+            List<Object> full = with(path, name.get(name.size() - 1));
             if (defined.containsKey(full)) throw new IllegalArgumentException("defined twice: " + raw);
             defined.put(full, 'v');
             Object[] value = new Object[1];
@@ -234,18 +251,24 @@ final class TomlSettings {
             int lineEnd = eol(s, end);
             String rest = s.substring(end, lineEnd).trim();
             if (!rest.isEmpty() && !rest.startsWith("#")) throw new IllegalArgumentException("junk after the value: " + raw);
-            lines.add(new Line(stripCr(s.substring(p, lineEnd)), table, String.join(".", name), s.substring(p, q),
-                               value[0]));
+            lines.add(new Line(stripCr(s.substring(p, lineEnd)), scope, full, s.substring(p, q), value[0]));
             p = next(s, lineEnd);
         }
+    }
+
+    private static List<Object> with(List<Object> path, Object seg) {
+        List<Object> l = new ArrayList<>(path);
+        l.add(seg);
+        return l;
     }
 
     /** Into the table seg under path: made if new (as kind 'p', a header's parent, or 'd', by a dotted key); an
      *  array of tables leads to its last element. A value there, or a header's table reopened by a dotted key, is
      *  an error. */
-    private static String step(java.util.Map<String, Character> defined, java.util.Map<String, Integer> elements,
-                               String path, String seg, char kind, String raw) {
-        String full = path.isEmpty() ? seg : path + "\u0000" + seg;
+    private static List<Object> step(java.util.Map<List<Object>, Character> defined,
+                                     java.util.Map<List<Object>, Integer> elements, List<Object> path, String seg,
+                                     char kind, String raw) {
+        List<Object> full = with(path, seg);
         Character was = defined.get(full);
         if (was == null) {
             defined.put(full, kind);
@@ -254,7 +277,7 @@ final class TomlSettings {
         if (was == 'v') throw new IllegalArgumentException("not a table: " + raw);
         if (was == 'a') {
             if (kind == 'd') throw new IllegalArgumentException("an array of tables in a dotted key: " + raw);
-            return full + "#" + (elements.get(full) - 1);
+            return with(full, elements.get(full) - 1);
         }
         if (kind == 'd' && (was == 'h' || was == 'p')) throw new IllegalArgumentException("table reopened: " + raw);
         return full;
@@ -310,10 +333,22 @@ final class TomlSettings {
         "0x[0-9A-Fa-f](_?[0-9A-Fa-f])*|0o[0-7](_?[0-7])*|0b[01](_?[01])*");
     private static final java.util.regex.Pattern FLOAT = java.util.regex.Pattern.compile(
         "[+-]?(inf|nan)|[+-]?" + DEC + "(\\." + DIGITS + "([eE][+-]?" + DIGITS + ")?|[eE][+-]?" + DIGITS + ")");
-    private static final String TIME = "([01][0-9]|2[0-3]):[0-5][0-9](:([0-5][0-9]|60)(\\.[0-9]+)?)?";
+    // a local time needs its seconds (TOML 1.0, as toml++ reads it); a date is checked against the calendar after
+    private static final String TIME = "([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?";
     private static final java.util.regex.Pattern DATE = java.util.regex.Pattern.compile(
-        "[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])([Tt ]" + TIME + "([Zz]|[+-]([01][0-9]|2[0-3]):[0-5][0-9])?)?"
-        + "|" + TIME);
+        "([0-9]{4})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])([Tt ]" + TIME
+        + "([Zz]|[+-]([01][0-9]|2[0-3]):[0-5][0-9])?)?");
+    private static final java.util.regex.Pattern LOCAL_TIME = java.util.regex.Pattern.compile(TIME);
+
+    private static boolean isDate(String bare) {
+        if (LOCAL_TIME.matcher(bare).matches()) return true;
+        java.util.regex.Matcher m = DATE.matcher(bare);
+        if (!m.matches()) return false;
+        int year = Integer.parseInt(m.group(1)), month = Integer.parseInt(m.group(2)), day = Integer.parseInt(m.group(3));
+        boolean leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+        int days = month == 2 ? (leap ? 29 : 28) : month == 4 || month == 6 || month == 9 || month == 11 ? 30 : 31;
+        return day <= days;
+    }
 
     /** The value at s[p]: its end, and in out[0] a Boolean, Long or String, or null for a value kept as it is
      *  (an array, an inline table, a multi-line string, a float, a date). */
@@ -350,7 +385,7 @@ final class TomlSettings {
         else if (RADIX.matcher(bare).matches()) {
             char r = bare.charAt(1);
             out[0] = integer(bare.substring(2).replace("_", ""), r == 'x' ? 16 : r == 'o' ? 8 : 2);
-        } else if (!FLOAT.matcher(bare).matches() && !DATE.matcher(bare).matches())
+        } else if (!FLOAT.matcher(bare).matches() && !isDate(bare))
             throw new IllegalArgumentException("not a value: " + bare);
         return e;
     }
