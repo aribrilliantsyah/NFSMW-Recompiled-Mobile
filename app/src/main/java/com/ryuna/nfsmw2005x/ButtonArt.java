@@ -660,38 +660,36 @@ final class ButtonArt {
         c.restore();
     }
 
-    /** A D-pad cross size px across: four arms, each its own press with a chevron; pressedMask: DPAD_* bits. */
+    /** A connected cross D-pad of five equal squares: outline only, pressed arms filled; pressedMask: DPAD_* bits. */
     static void drawDpad(Canvas c, float cx, float cy, float size, int pressedMask, float opacity) {
-        float a = size * .34f, sw = size * .035f, r = a * .28f, L = size / 2 - sw;
-        fill(body(false, opacity));
-        c.drawRect(cx - a / 2, cy - a / 2, cx + a / 2, cy + a / 2, P.fill);
-        // up, right, down, left: the arm drawn upwards, turned
-        int[] bits = {DPAD_UP, DPAD_RIGHT, DPAD_DOWN, DPAD_LEFT};
+        float q = size / 3f, h = q * .5f;
+        float sw = size * .035f;
         Path p = P.path;
-        for (int k = 0; k < 4; k++) {
-            boolean on = (pressedMask & bits[k]) != 0;
-            c.save();
-            c.rotate(90 * k, cx, cy);
-            p.reset();
-            p.moveTo(cx - a / 2, cy - a / 2);
-            p.lineTo(cx - a / 2, cy - L + r);
-            p.quadTo(cx - a / 2, cy - L, cx - a / 2 + r, cy - L);
-            p.lineTo(cx + a / 2 - r, cy - L);
-            p.quadTo(cx + a / 2, cy - L, cx + a / 2, cy - L + r);
-            p.lineTo(cx + a / 2, cy - a / 2);
-            fill(body(on, opacity));
-            c.drawPath(p, P.fill);
-            stroke(alpha(COLOR_GREY, opacity), sw * (on ? 1.4f : 1f));
-            c.drawPath(p, P.stroke);
-            p.reset();
-            p.moveTo(cx - a * .22f, cy - L + a * .62f);
-            p.lineTo(cx, cy - L + a * .36f);
-            p.lineTo(cx + a * .22f, cy - L + a * .62f);
-            stroke(alpha(0xFFFFFFFF, ink(opacity)), sw * 1.1f);
-            c.drawPath(p, P.stroke);
-            c.restore();
-        }
-        stroke(alpha(COLOR_GREY, .5f * opacity), sw * .8f);
-        c.drawCircle(cx, cy, a * .16f, P.stroke);
+        p.reset();
+        p.moveTo(cx - h, cy - h - q);
+        p.lineTo(cx + h, cy - h - q);
+        p.lineTo(cx + h, cy - h);
+        p.lineTo(cx + h + q, cy - h);
+        p.lineTo(cx + h + q, cy + h);
+        p.lineTo(cx + h, cy + h);
+        p.lineTo(cx + h, cy + h + q);
+        p.lineTo(cx - h, cy + h + q);
+        p.lineTo(cx - h, cy + h);
+        p.lineTo(cx - h - q, cy + h);
+        p.lineTo(cx - h - q, cy - h);
+        p.lineTo(cx - h, cy - h);
+        p.close();
+
+        fill(body(false, opacity));
+        c.drawPath(p, P.fill);
+
+        fill(body(true, opacity));
+        if ((pressedMask & DPAD_UP) != 0) c.drawRect(cx - h, cy - h - q, cx + h, cy - h, P.fill);
+        if ((pressedMask & DPAD_DOWN) != 0) c.drawRect(cx - h, cy + h, cx + h, cy + h + q, P.fill);
+        if ((pressedMask & DPAD_LEFT) != 0) c.drawRect(cx - h - q, cy - h, cx - h, cy + h, P.fill);
+        if ((pressedMask & DPAD_RIGHT) != 0) c.drawRect(cx + h, cy - h, cx + h + q, cy + h, P.fill);
+
+        stroke(alpha(COLOR_GREY, opacity), sw);
+        c.drawPath(p, P.stroke);
     }
 }
