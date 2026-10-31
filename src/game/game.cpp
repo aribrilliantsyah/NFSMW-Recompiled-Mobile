@@ -196,10 +196,13 @@ void ApplyCheats() {
         o.cheat_set_cash = kNoCash;
         MarkCheatsUsed();
         // consumed: the file's request (applied now, or replaced by the CHEATS row's) is answered, until then retried
-        // without setting the cash again, so no later boot sets it a second time
-        g_cash_ack = o.cheat_set_cash_file;
-        o.cheat_set_cash_file = kNoCash;
-        g_cash_ack_wait = 0;
+        // without setting the cash again, so no later boot sets it a second time. A run-only apply (the row's, no file
+        // request left) leaves an earlier answer still being retried as it is
+        if (o.cheat_set_cash_file != kNoCash) {
+            g_cash_ack = o.cheat_set_cash_file;
+            o.cheat_set_cash_file = kNoCash;
+            g_cash_ack_wait = 0;
+        }
     }
     if (g_cash_ack != kNoCash && g_cash_ack_wait-- <= 0) {
         if (AckCashRequest(g_cash_ack)) g_cash_ack = kNoCash;
