@@ -45,16 +45,27 @@ public class LauncherActivity extends Activity {
     private TextView mPlayHint;
     private volatile boolean mCancelExtract;
     private LinearLayout mSlotList;
-    private String mBackupSlot;   // the slot whose backup the document picker is naming
+    // the slot (and the game folder it is in) whose backup the document picker is naming: kept over the launcher
+    // being recreated while the picker is up
+    private String mBackupSlot, mBackupGame;
+    /** Slot work, one job at a time for every launcher instance; PLAY waits for none of it, it refuses. */
+    private static final java.util.concurrent.ExecutorService SAVES =
+        java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "saves"));
+    private static final java.util.concurrent.atomic.AtomicInteger sSaveJobs =
+        new java.util.concurrent.atomic.AtomicInteger();
 
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        if (b != null) {
+            mBackupSlot = b.getString("backup_slot");
+            mBackupGame = b.getString("backup_game");
+        }
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
         mPrefs = Settings.prefs(this);
         ui = new UiKit(this);
         loadNative();
-        migrateSaves();
+        migrateSaves();             // a failure is shown; PLAY tries again and refuses until it succeeds
         setContentView(build());
         refreshDir();
         android.view.WindowInsetsController c = getWindow().getInsetsController();
@@ -62,6 +73,13 @@ public class LauncherActivity extends Activity {
             c.hide(android.view.WindowInsets.Type.systemBars());
             c.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
         }
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putString("backup_slot", mBackupSlot);
+        out.putString("backup_game", mBackupGame);
     }
 
     @Override
@@ -181,7 +199,7 @@ public class LauncherActivity extends Activity {
         c.addView(mSlotList);
         LinearLayout row = new LinearLayout(this);
         row.addView(ui.secondary("New slot", v -> askName("New slot", "", n -> job("Slot " + n.trim() + " created",
-                () -> Settings.saveSlots(this).create(n)))), new LinearLayout.LayoutParams(0, -2, 1f));
+                () -> slots().create(n)))), new LinearLayout.LayoutParams(0, -2, 1f));
         row.addView(ui.gap(8));
         row.addView(ui.secondary("Restore backup…", v -> pickRestore()), new LinearLayout.LayoutParams(0, -2, 1f));
         c.addView(row);
@@ -238,11 +256,12 @@ public class LauncherActivity extends Activity {
                         break;
                     case 1:
                         askName("Copy of " + name, name + " copy", n -> job("Copied into " + n.trim(),
-                                () -> Settings.saveSlots(this).duplicate(name, n)));
+                                () -> slots().duplicate(name, n)));
                         break;
                     case 2:
+                        if (refuseWhileGame()) return;
                         askName("Rename " + name, name, n -> job("Renamed to " + n.trim(), () -> {
-                            Settings.saveSlots(this).rename(name, n);
+                            slots().rename(name, n);
                             if (name.equals(Settings.saveSlot(this)))
                                 mPrefs.edit().putString(Settings.K_SAVE_SLOT, n.trim()).apply();
                         }));
@@ -253,7 +272,7 @@ public class LauncherActivity extends Activity {
                             .setTitle("Delete " + name + "?")
                             .setMessage("Its saves are gone for good unless you have a backup.")
                             .setPositiveButton("Delete", (d2, w2) -> job("Deleted " + name,
-                                    () -> Settings.saveSlots(this).delete(name)))
+                                    () -> slots().delete(name)))
                             .setNegativeButton("Cancel", null)
                             .show();
                         break;
@@ -282,40 +301,56 @@ public class LauncherActivity extends Activity {
 
     private interface SaveJob { void run() throws IOException; }
 
-    /** File work off the UI thread; the list again and the outcome after. */
+    /** File work on the one saves thread, the list again and the outcome after. */
     private void job(String done, SaveJob j) {
-        new Thread(() -> {
+        sSaveJobs.incrementAndGet();
+        SAVES.execute(() -> {
             String err = null;
             try {
                 j.run();
             } catch (IOException | RuntimeException e) {   // SAF's providers throw SecurityException and the like
                 err = e.getMessage() != null ? e.getMessage() : e.toString();
+            } finally {
+                sSaveJobs.decrementAndGet();
             }
             final String msg = err;
             runOnUiThread(() -> {
+                if (isDestroyed()) return;
                 refreshSaves();
                 if (msg != null) alert("Saves", msg);
                 else Toast.makeText(this, done, Toast.LENGTH_SHORT).show();
             });
-        }, "saves").start();
+        });
     }
 
-    /** The game reads and writes the slot while it runs: no restore or delete under it. */
-    private boolean refuseWhileGame() {
+    /** The slots of the game folder, refusing the changes the running game must not see (asked again right before
+     *  each one changes a slot: the game may have started since the button was pressed). */
+    private SaveSlots slots() {
+        return Settings.saveSlots(this).guard(() -> {
+            if (gameRunning()) throw new IOException("The game is running: exit it (☰ > Exit) first.");
+        });
+    }
+
+    private boolean gameRunning() {
         android.app.ActivityManager am = getSystemService(android.app.ActivityManager.class);
         java.util.List<android.app.ActivityManager.RunningAppProcessInfo> ps = am == null ? null
                 : am.getRunningAppProcesses();
         if (ps != null)
             for (android.app.ActivityManager.RunningAppProcessInfo p : ps)
-                if ((getPackageName() + ":game").equals(p.processName)) {
-                    alert("The game is running", "Exit the game (☰ > Exit) first.");
-                    return true;
-                }
+                if ((getPackageName() + ":game").equals(p.processName)) return true;
         return false;
+    }
+
+    /** The game reads and writes the slot while it runs: no restore, delete or rename under it. */
+    private boolean refuseWhileGame() {
+        if (!gameRunning()) return false;
+        alert("The game is running", "Exit the game (☰ > Exit) first.");
+        return true;
     }
 
     private void pickBackup(String slot) {
         mBackupSlot = slot;
+        mBackupGame = Settings.gameDir(this);
         String day = new java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(new java.util.Date());
         Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
@@ -346,11 +381,11 @@ public class LauncherActivity extends Activity {
         }
     }
 
-    private void backup(Uri uri, String slot) {
+    private void backup(Uri uri, String slot, String gameDir) {
         job("Backed up " + slot, () -> {
             try (java.io.OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
                 if (out == null) throw new IOException("Cannot write the backup file");
-                Settings.saveSlots(this).backup(slot, out);
+                new SaveSlots(new File(gameDir)).backup(slot, out);
             }
         });
     }
@@ -367,7 +402,7 @@ public class LauncherActivity extends Activity {
                 .matcher(file == null ? "" : file);
         if (m.matches()) def = m.group(1);
         askName("Restore into slot", def, n -> {
-            SaveSlots slots = Settings.saveSlots(this);
+            SaveSlots slots = slots();
             String name = n.trim();
             Runnable go = () -> job("Restored into " + name, () -> {
                 try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
@@ -389,16 +424,20 @@ public class LauncherActivity extends Activity {
         });
     }
 
-    /** Once: the hard disk of the builds before slots (files/hdd, else game/UDATA) becomes Main. */
-    private void migrateSaves() {
-        if (mPrefs.getBoolean(Settings.K_SAVES_MIGRATED, false)) return;
+    /** Once: the hard disk of the builds before slots (files/hdd, else game/UDATA) becomes Main. False (the reason
+     *  shown) when it failed: the old saves stay where they were and the next start or PLAY tries again. */
+    private boolean migrateSaves() {
+        if (mPrefs.getBoolean(Settings.K_SAVES_MIGRATED, false)) return true;
         String game = Settings.gameDir(this);
-        if (Settings.checkGameDir(game) != null) return;
+        if (Settings.checkGameDir(game) != null) return true;
+        if (sSaveJobs.get() > 0) return false;   // a job holds the slots; PLAY refuses then anyway
         try {
             Settings.saveSlots(this).migrateLegacy(new File(Settings.filesDir(this), "hdd"), new File(game, "UDATA"));
             mPrefs.edit().putBoolean(Settings.K_SAVES_MIGRATED, true).apply();
+            return true;
         } catch (IOException e) {
             alert("Cannot move the saves into slots", e.getMessage() + "\n\nThe old saves are untouched.");
+            return false;
         }
     }
 
@@ -697,8 +736,8 @@ public class LauncherActivity extends Activity {
 
     private static String fmtMB(long b) { return String.format(java.util.Locale.US, "%,d MB", b >> 20); }
 
-    /** Checks the image, then extracts it into the app's game folder:
-     *  game.tmp first, renamed over game at the end (saves kept). */
+    /** Checks the image, then extracts it into the app's game folder: game.tmp first, then the old disc's files
+     *  replaced by the new ones, the saves (saves/, UDATA) left where they are. */
     private void installIso(Uri uri) {
         android.os.ParcelFileDescriptor pfd;
         try {
@@ -786,16 +825,20 @@ public class LauncherActivity extends Activity {
                     }
                     return !mCancelExtract;
                 });
-                // keep the saves of an earlier install: the slots, and the old LLE build's UDATA
-                for (String keep : new String[] {"saves", "UDATA"}) {
-                    File old = new File(game, keep);
-                    if (!old.isDirectory()) continue;
-                    File moved = new File(tmp, keep);
-                    deleteTree(moved);
-                    if (!old.renameTo(moved)) throw new java.io.IOException("Cannot keep the saves (" + keep + ")");
+                // the saves (slots, and the old LLE build's UDATA) never move: the old disc's files go and the new
+                // ones are moved in around them, so a failure here cannot take a save with game.tmp
+                java.util.Set<String> keep = new java.util.HashSet<>(java.util.Arrays.asList("saves", "UDATA"));
+                if (!game.isDirectory() && !game.mkdirs()) throw new java.io.IOException("Cannot create " + game);
+                File[] olds = game.listFiles();
+                if (olds != null) for (File o : olds) if (!keep.contains(o.getName())) deleteTree(o);
+                File[] news = tmp.listFiles();
+                if (news == null) throw new java.io.IOException("Cannot read game.tmp");
+                for (File n : news) {
+                    if (keep.contains(n.getName())) continue;
+                    if (!n.renameTo(new File(game, n.getName())))
+                        throw new java.io.IOException("Cannot move " + n.getName() + " into game");
                 }
-                deleteTree(game);
-                if (!tmp.renameTo(game)) throw new java.io.IOException("Cannot rename game.tmp to game");
+                deleteTree(tmp);
             } catch (XisoExtractor.Cancelled c) {
                 cancelled = true;
             } catch (Exception e) {
@@ -864,8 +907,14 @@ public class LauncherActivity extends Activity {
         }
         if (req == REQ_BACKUP || req == REQ_RESTORE) {
             if (res != RESULT_OK || data == null || data.getData() == null) return;
-            if (req == REQ_BACKUP && mBackupSlot != null) backup(data.getData(), mBackupSlot);
-            else if (req == REQ_RESTORE) restore(data.getData());
+            if (req == REQ_RESTORE) {
+                restore(data.getData());
+            } else if (mBackupSlot == null || mBackupGame == null) {
+                alert("Backup not made", "The launcher lost which slot to back up; pick Back up… again.");
+            } else {
+                backup(data.getData(), mBackupSlot, mBackupGame);
+                mBackupSlot = mBackupGame = null;
+            }
             return;
         }
         if (req != REQ_TREE || res != RESULT_OK || data == null || data.getData() == null) return;
@@ -899,8 +948,14 @@ public class LauncherActivity extends Activity {
             Toast.makeText(this, err, Toast.LENGTH_LONG).show();
             return;
         }
+        // a slot being copied, restored or deleted: the game would boot the half of it there is
+        if (sSaveJobs.get() > 0) {
+            Toast.makeText(this, "Wait for the save slot work to finish.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        // the old saves not in Main yet: playing would start a fresh Main over them
+        if (!migrateSaves()) return;
         try {
-            migrateSaves();
             // the slot PLAY hands the game: the chosen one, or Main when that is gone
             SaveSlots slots = Settings.saveSlots(this);
             String slot = Settings.saveSlot(this);

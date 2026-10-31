@@ -14,6 +14,7 @@ import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -22,7 +23,8 @@ import java.util.zip.ZipOutputStream;
  * Save slots: <game folder>/saves/<slot>/, each a whole hard disk as kernel::Boot mounts it (data_dir: E/ C/ X/ Y/ Z/
  * for the partitions, display.bin and launch.bin beside them; the game's saves in E/UDATA/<title>/<save>/). PLAY hands
  * the active one to native as save_dir. Backups are zips of a slot, entries relative to its root.
- * Every failure is an IOException whose message can be shown to the player as it is.
+ * Every failure is an IOException whose message can be shown to the player as it is. Changes run one at a time
+ * across every instance (LOCK), each in staging dirs of its own (saves/.<op>-<random>, which list() skips).
  */
 final class SaveSlots {
     static final String MAIN = "Main";
@@ -35,6 +37,12 @@ final class SaveSlots {
     private static final String[] TOP_DIRS = {"E", "C", "X", "Y", "Z"};
     private static final String[] TOP_FILES = {"display.bin", "launch.bin", CHEATS_MARK};
 
+    /** Throws when a change must not go ahead now (the launcher's: the game is running); asked just before the
+     *  step that changes a slot, so a check made when the operation was started cannot go stale. */
+    interface Guard { void check() throws IOException; }
+
+    private static final Object LOCK = new Object();
+
     static final class Slot {
         String name;
         long sizeBytes;
@@ -45,8 +53,14 @@ final class SaveSlots {
     }
 
     private final File root;
+    private Guard guard = () -> { };
 
     SaveSlots(File gameDir) { root = new File(gameDir, "saves"); }
+
+    SaveSlots guard(Guard g) {
+        guard = g;
+        return this;
+    }
 
     File root() { return root; }
 
@@ -74,39 +88,60 @@ final class SaveSlots {
     }
 
     void create(String name) throws IOException {
-        File d = dir(checkNew(name));
-        if (!d.mkdirs()) throw new IOException("Cannot create the slot folder " + d);
-    }
-
-    void duplicate(String from, String to) throws IOException {
-        File src = existing(from), dst = dir(checkNew(to));
-        File tmp = work("copy-" + dst.getName());
-        try {
-            copyTree(src, tmp);
-            move(tmp, dst);
-        } finally {
-            deleteTree(tmp);
+        synchronized (LOCK) {
+            File d = dir(checkNew(name));
+            if (!d.mkdirs()) throw new IOException("Cannot create the slot folder " + d);
         }
     }
 
+    void duplicate(String from, String to) throws IOException {
+        synchronized (LOCK) {
+            File src = existing(from), dst = dir(checkNew(to));
+            File tmp = work("copy");
+            try {
+                copyTree(src, tmp);
+                move(tmp, dst);
+            } finally {
+                deleteTree(tmp);
+            }
+        }
+    }
+
+    /** The game holds its slot's path from boot: no rename under it. */
     void rename(String from, String to) throws IOException {
-        File src = existing(from), dst = dir(checkNew(to));
-        if (!src.renameTo(dst)) throw new IOException("Cannot rename " + src.getName() + " to " + dst.getName());
+        synchronized (LOCK) {
+            File src = existing(from), dst = dir(checkNew(to));
+            guard.check();
+            if (!src.renameTo(dst)) throw new IOException("Cannot rename " + src.getName() + " to " + dst.getName());
+        }
     }
 
     void delete(String name) throws IOException {
-        File d = existing(name);
-        deleteTree(d);
-        if (d.exists()) throw new IOException("Could not delete all of " + d.getName());
+        synchronized (LOCK) {
+            File d = existing(name);
+            guard.check();
+            deleteTree(d);
+            if (d.exists()) throw new IOException("Could not delete all of " + d.getName());
+        }
     }
 
-    /** The slot as a zip into out (finished, not closed: out is the caller's). */
+    /** The slot as a zip into out (finished, not closed: out is the caller's). An empty slot still gets E/ and
+     *  E/UDATA/, the layout restore asks for. */
     void backup(String name, OutputStream out) throws IOException {
-        File d = existing(name);
-        ZipOutputStream z = new ZipOutputStream(out);
-        zipTree(d, "", z);
-        z.finish();
-        z.flush();
+        synchronized (LOCK) {
+            File d = existing(name);
+            ZipOutputStream z = new ZipOutputStream(out);
+            if (!new File(d, "E/UDATA").isDirectory() && !new File(d, "E/TDATA").isDirectory()) {
+                boolean hasE = new File(d, "E").isDirectory();
+                for (String n : hasE ? new String[] {"E/UDATA/"} : new String[] {"E/", "E/UDATA/"}) {
+                    z.putNextEntry(new ZipEntry(n));
+                    z.closeEntry();
+                }
+            }
+            zipTree(d, "", z);
+            z.finish();
+            z.flush();
+        }
     }
 
     /**
@@ -116,32 +151,34 @@ final class SaveSlots {
      * swapped in only once it all succeeded: a bad zip leaves everything as it was.
      */
     void restore(InputStream in, String into, boolean overwrite) throws IOException {
-        String name = checkName(into);
-        File dst = dir(name);
-        boolean replace = dst.exists();
-        if (replace && !overwrite) throw new IOException("A slot named " + name + " already exists");
-        File zipCopy = work("restore-" + name + ".zip"), tmp = work("restore-" + name);
-        try {
-            copyCapped(in, zipCopy);
-            try (ZipFile zip = new ZipFile(zipCopy)) {
-                check(zip, tmp);
-                unpack(zip, tmp);
-            }
-            if (replace) {
-                autoBackup(name);
-                File old = work("old-" + name);
-                if (!dst.renameTo(old)) throw new IOException("Cannot move the old " + name + " aside");
-                if (!tmp.renameTo(dst)) {
-                    old.renameTo(dst);
-                    throw new IOException("Cannot put the restored " + name + " in place");
+        synchronized (LOCK) {
+            String name = checkName(into);
+            File dst = dir(name);
+            if (dst.exists() && !overwrite) throw new IOException("A slot named " + name + " already exists");
+            File zipCopy = work("restore-zip"), tmp = work("restore");
+            try {
+                copyCapped(in, zipCopy);
+                try (ZipFile zip = new ZipFile(zipCopy)) {
+                    check(zip, tmp);
+                    unpack(zip, tmp);
                 }
-                deleteTree(old);
-            } else {
-                move(tmp, dst);
+                guard.check();
+                if (dst.exists()) {
+                    autoBackup(name);
+                    File old = work("old");
+                    if (!dst.renameTo(old)) throw new IOException("Cannot move the old " + name + " aside");
+                    if (!tmp.renameTo(dst)) {
+                        old.renameTo(dst);
+                        throw new IOException("Cannot put the restored " + name + " in place");
+                    }
+                    deleteTree(old);
+                } else {
+                    move(tmp, dst);
+                }
+            } finally {
+                deleteTree(zipCopy);
+                deleteTree(tmp);
             }
-        } finally {
-            zipCopy.delete();
-            deleteTree(tmp);
         }
     }
 
@@ -151,29 +188,31 @@ final class SaveSlots {
      * already holds something or there is nothing to move.
      */
     boolean migrateLegacy(File filesHdd, File gameUdata) throws IOException {
-        File main = dir(MAIN);
-        if (hasContent(main)) return false;
-        File src;
-        String under;
-        if (hasContent(filesHdd)) {
-            src = filesHdd;
-            under = "";
-        } else if (hasContent(gameUdata)) {
-            src = gameUdata;
-            under = "E/UDATA";
-        } else {
-            return false;
+        synchronized (LOCK) {
+            File main = dir(MAIN);
+            if (hasContent(main)) return false;
+            File src;
+            String under;
+            if (hasContent(filesHdd)) {
+                src = filesHdd;
+                under = "";
+            } else if (hasContent(gameUdata)) {
+                src = gameUdata;
+                under = "E/UDATA";
+            } else {
+                return false;
+            }
+            File tmp = work("migrate");
+            try {
+                copyTree(src, under.isEmpty() ? tmp : new File(tmp, under));
+                if (main.exists() && !main.delete()) throw new IOException("Cannot replace the empty " + MAIN);
+                move(tmp, main);
+            } finally {
+                deleteTree(tmp);
+            }
+            deleteTree(src);
+            return true;
         }
-        File tmp = work("migrate");
-        try {
-            copyTree(src, under.isEmpty() ? tmp : new File(tmp, under));
-            if (main.exists() && !main.delete()) throw new IOException("Cannot replace the empty " + MAIN);
-            move(tmp, main);
-        } finally {
-            deleteTree(tmp);
-        }
-        deleteTree(src);
-        return true;
     }
 
     // ---------------------------------------------------------------- names
@@ -201,12 +240,13 @@ final class SaveSlots {
         return d;
     }
 
-    /** A work dir or file in saves/, gone from an earlier run that died. */
+    /** A staging path in saves/ that is this operation's alone (not created: the caller makes it a dir or file). A
+     *  dead run's staging is left as it is, as it may hold the only copy of a slot that was being swapped. */
     private File work(String what) throws IOException {
         if (!root.isDirectory() && !root.mkdirs()) throw new IOException("Cannot create " + root);
-        File f = new File(root, "." + what);
-        deleteTree(f);
-        return f;
+        File d = Files.createTempDirectory(root.toPath(), "." + what + "-").toFile();
+        if (!d.delete()) throw new IOException("Cannot use " + d);
+        return d;
     }
 
     // ---------------------------------------------------------------- zips
@@ -237,11 +277,14 @@ final class SaveSlots {
         if (!save) throw new IOException("Not a save backup: no E/UDATA or E/TDATA in it");
     }
 
-    /** Into a fresh dir, counting what is written: the sizes a zip declares may lie. */
+    /** Into a fresh dir, counting what is written (the sizes a zip declares may lie) and checking each file against
+     *  the size and CRC-32 the zip gives for it: ZipFile's streams do not, and a damaged backup must not replace a
+     *  slot. */
     private static void unpack(ZipFile zip, File into) throws IOException {
         if (!into.mkdirs()) throw new IOException("Cannot create " + into);
         long total = 0;
         byte[] buf = new byte[64 << 10];
+        CRC32 crc = new CRC32();
         for (Enumeration<? extends ZipEntry> e = zip.entries(); e.hasMoreElements(); ) {
             ZipEntry z = e.nextElement();
             File f = new File(into, z.getName());
@@ -251,14 +294,20 @@ final class SaveSlots {
             }
             File p = f.getParentFile();
             if (!p.isDirectory() && !p.mkdirs()) throw new IOException("Cannot create " + p);
+            crc.reset();
+            long size = 0;
             try (InputStream in = zip.getInputStream(z); OutputStream out = new FileOutputStream(f)) {
                 for (int r; (r = in.read(buf)) > 0; ) {
                     total += r;
+                    size += r;
                     if (total > MAX_UNPACKED)
                         throw new IOException("The backup unpacks to more than " + (MAX_UNPACKED >> 20) + " MB");
+                    crc.update(buf, 0, r);
                     out.write(buf, 0, r);
                 }
             }
+            if (z.getSize() < 0 || z.getCrc() < 0 || size != z.getSize() || crc.getValue() != z.getCrc())
+                throw new IOException("The backup is damaged: " + z.getName() + " does not match its checksum");
             if (z.getTime() > 0) f.setLastModified(z.getTime());
         }
     }

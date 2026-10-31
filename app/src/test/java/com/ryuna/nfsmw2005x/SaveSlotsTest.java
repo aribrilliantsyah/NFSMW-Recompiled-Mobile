@@ -145,4 +145,103 @@ public class SaveSlotsTest {
             fail("\" Main \" is Main once trimmed");
         } catch (IOException expected) { }
     }
+
+    /** A zip of the given entries (name, content; null content: a directory). */
+    private static byte[] zip(String... nc) throws IOException {
+        ByteArrayOutputStream b = new ByteArrayOutputStream();
+        try (ZipOutputStream z = new ZipOutputStream(b)) {
+            for (int i = 0; i < nc.length; i += 2) {
+                z.putNextEntry(new ZipEntry(nc[i]));
+                if (nc[i + 1] != null) z.write(nc[i + 1].getBytes(StandardCharsets.UTF_8));
+                z.closeEntry();
+            }
+        }
+        return b.toByteArray();
+    }
+
+    private static void assertRejected(SaveSlots s, byte[] zip) throws Exception {
+        try {
+            s.restore(new ByteArrayInputStream(zip), "Main", true);
+            fail("a bad backup was restored");
+        } catch (IOException expected) { }
+        assertEquals("career bytes", new String(read(new File(s.dir("Main"), "E/UDATA/4541007b/004100520049/ARI")),
+                                               StandardCharsets.UTF_8));
+        assertEquals(1, s.list().size());
+        File[] auto = s.root().listFiles((d, n) -> n.startsWith("auto-"));
+        assertEquals(0, auto.length);
+    }
+
+    @Test
+    public void restoreRejectsAbsoluteAndMissingLayout() throws Exception {
+        SaveSlots s = new SaveSlots(tmp.newFolder("game"));
+        s.create("Main");
+        fillSlot(s.dir("Main"));
+        assertRejected(s, zip("E/UDATA/4541007b/x", "1", "/etc/evil", "2"));
+        assertRejected(s, zip("E/UDATA/4541007b/x", "1", "C:/evil", "2"));
+        assertRejected(s, zip("E/UDATA/4541007b/x", "1", "Q/other", "2"));   // not a partition
+        assertRejected(s, zip("display.bin", "pixels", "C/x", "1"));        // no E/UDATA or E/TDATA
+        assertRejected(s, zip("readme.txt", "hi"));
+    }
+
+    @Test
+    public void restoreRejectsCorruptPayload() throws Exception {
+        SaveSlots s = new SaveSlots(tmp.newFolder("game"));
+        s.create("Main");
+        fillSlot(s.dir("Main"));
+        // a STORED entry: its bytes sit in the file as they are, so one can be changed under its CRC
+        ByteArrayOutputStream b = new ByteArrayOutputStream();
+        byte[] data = "GOODSAVEPAYLOAD".getBytes(StandardCharsets.US_ASCII);
+        try (ZipOutputStream z = new ZipOutputStream(b)) {
+            ZipEntry e = new ZipEntry("E/UDATA/4541007b/004100520049/ARI");
+            e.setMethod(ZipEntry.STORED);
+            e.setSize(data.length);
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            crc.update(data);
+            e.setCrc(crc.getValue());
+            z.putNextEntry(e);
+            z.write(data);
+            z.closeEntry();
+        }
+        byte[] bytes = b.toByteArray();
+        int at = new String(bytes, StandardCharsets.ISO_8859_1).indexOf("GOODSAVEPAYLOAD");
+        assertTrue(at > 0);
+        bytes[at] = 'B';
+        assertRejected(s, bytes);
+    }
+
+    @Test
+    public void emptySlotRoundTrips() throws Exception {
+        SaveSlots s = new SaveSlots(tmp.newFolder("game"));
+        s.create("Empty");
+        ByteArrayOutputStream zip = new ByteArrayOutputStream();
+        s.backup("Empty", zip);
+        s.restore(new ByteArrayInputStream(zip.toByteArray()), "Again", false);
+        assertTrue(s.dir("Again").isDirectory());
+        // and over a slot that has one: the automatic backup of an empty slot restores too
+        s.restore(new ByteArrayInputStream(zip.toByteArray()), "Empty", true);
+        File[] auto = s.root().listFiles((d, n) -> n.startsWith("auto-Empty-"));
+        assertEquals(1, auto.length);
+        s.restore(Files.newInputStream(auto[0].toPath()), "Third", false);
+        assertTrue(s.dir("Third").isDirectory());
+    }
+
+    @Test
+    public void guardStopsDeleteRenameRestore() throws Exception {
+        SaveSlots s = new SaveSlots(tmp.newFolder("game"));
+        s.create("Main");
+        fillSlot(s.dir("Main"));
+        ByteArrayOutputStream zip = new ByteArrayOutputStream();
+        s.backup("Main", zip);
+        s.guard(() -> { throw new IOException("game running"); });
+        try { s.delete("Main"); fail("deleted"); } catch (IOException expected) { }
+        try { s.rename("Main", "Other"); fail("renamed"); } catch (IOException expected) { }
+        try {
+            s.restore(new ByteArrayInputStream(zip.toByteArray()), "Main", true);
+            fail("restored");
+        } catch (IOException expected) { }
+        assertTrue(new File(s.dir("Main"), "E/UDATA/4541007b/004100520049/ARI").isFile());
+        assertEquals(1, s.list().size());
+        // nothing left in saves/ but Main: no staging, no automatic backup
+        assertEquals(1, s.root().list().length);
+    }
 }
