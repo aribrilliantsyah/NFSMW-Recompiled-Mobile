@@ -1,15 +1,22 @@
 // Need for Speed: Most Wanted (Black Edition) needs no patch of its code to boot: the XDK it calls is all on the host.
 // Its own hooks go here, [[hook]] entries in config/game.toml and X86_FUNC replacements of recompiled functions.
+#include <algorithm>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <unordered_map>
 
+#include "app/app.h"
 #include "common/aspect.h"
 #include "common/options.h"
 #include "cpu/x86_ops.h"
 #include "kernel/kernel.h"
 #include "kernel/memory.h"
 
+namespace app {
+std::filesystem::path SaveRoot();  // the host's (native/main.cpp, linux/main.cpp): the hard disk kernel::Boot mounts
+}
 namespace game {
 
 // The console's widescreen flag (XGetVideoFlags at boot, 0x0D0202, kept at 0x48099C; set from 3:2 on, native/main.cpp)
@@ -103,7 +110,9 @@ void ApplyGraphicsSwitches() {
 //   set, and the speedbreaker's (0x20E663, LocalPlayer +0x84 less the time) while the one at 0x4B9694 is: debug
 //   switches the game reads there alone and never writes, 0 on the disc. Every car's nitrous, the racers' too
 // - the career's cash is CareerSettings::CurrentCash, [[0x48EDD4] + 0x10] + 0xB4: the FEDatabase's first profile, as
-//   the CASH_DATA string prints it (0x0F5425)
+//   the CASH_DATA string prints it (0x0F5425). The profile is there from boot, unnamed: its byte at +0x20 is set only
+//   by a name of the player's (0x125F70 copies the name to +0, 1 at +0x20 for a given one, 0 for the default it falls
+//   back to; 0x131CF5 gives an unnamed profile that default), so a set cash waits for a made or loaded profile
 // - the cop manager ([0x494E40], ICopMgr at AICopManager +0x54) spawns no cop and starts no pursuit while its byte at
 //   +0x60 is set (VehicleSpawningEnabled, 0x01A370): what the scripts' NoNewPursuitsOrCops sets (0x0130E0). The game
 //   clears it again on a reset (0x01A9CD), so it is set at each present; off gives back the value it had
@@ -111,7 +120,7 @@ void ApplyGraphicsSwitches() {
 //   (cars, parts, races: 0x12C0E0, 0x13B2DB, ...). The game sets it itself for a mode of its menus (0x1049FA), so off
 //   gives back the value it had too
 constexpr uint32_t kInfiniteNos = 0x49A61C, kInfiniteSpeedbreaker = 0x4B9694;
-constexpr uint32_t kFeDatabase = 0x48EDD4, kProfileCash = 0xB4, kCheatCash = 9999999;
+constexpr uint32_t kFeDatabase = 0x48EDD4, kProfileCash = 0xB4, kProfileNamed = 0x20;
 constexpr uint32_t kCopManager = 0x494E40, kNoNewCops = 0x60;
 constexpr uint32_t kUnlockAllThings = 0x493D00;
 
@@ -134,19 +143,57 @@ struct HeldByte {
     }
 };
 
+bool CareerCash(uint32_t& cash) {
+    uint32_t db = kernel::R32(kFeDatabase);
+    uint32_t profile = db && mem::IsCommitted(db + 0x10) ? kernel::R32(db + 0x10) : 0;
+    if (!profile || !mem::IsCommitted(profile + kProfileNamed) || !mem::IsCommitted(profile + kProfileCash + 3) ||
+        !kernel::G<uint8_t>(profile + kProfileNamed))
+        return false;
+    cash = kernel::R32(profile + kProfileCash);
+    return true;
+}
+
+namespace {
+// the career profile's cash address, 0 while CareerCash has none
+uint32_t CashAddress() {
+    uint32_t cash;
+    return CareerCash(cash) ? kernel::R32(kernel::R32(kFeDatabase) + 0x10) + kProfileCash : 0;
+}
+
+// the slot's cheats_used mark (SaveSlots.CHEATS_MARK), the launcher's CHEATS ON tag; made once per boot for each
+// cheat that is on, and for each set cash
+void MarkCheatsUsed() {
+    std::error_code ec;
+    std::filesystem::path mark = app::SaveRoot() / "cheats_used";
+    if (std::filesystem::exists(mark, ec)) return;
+    std::ofstream f(mark);
+}
+}  // namespace
+
 void ApplyCheats() {
-    const Options& o = Opt();
+    Options& o = Opt();
     kernel::G<uint8_t>(kInfiniteNos) = o.cheat_nos ? 1 : 0;
     kernel::G<uint8_t>(kInfiniteSpeedbreaker) = o.cheat_speedbreaker ? 1 : 0;
-    if (o.cheat_cash) {
-        uint32_t db = kernel::R32(kFeDatabase);
-        uint32_t profile = db && mem::IsCommitted(db + 0x10) ? kernel::R32(db + 0x10) : 0;
-        if (profile && mem::IsCommitted(profile + kProfileCash)) kernel::W32(profile + kProfileCash, kCheatCash);
+    uint32_t cash = CashAddress();
+    if (o.cheat_set_cash && cash) {
+        // once: 0 again in the file, so neither the next boot nor the launcher applies it again
+        kernel::W32(cash, std::min(o.cheat_set_cash, kMaxCash));
+        o.cheat_set_cash = 0;
+        app::Save();
+        MarkCheatsUsed();
     }
+    if (o.cheat_cash && cash) kernel::W32(cash, kMaxCash);
     static HeldByte no_cops, unlock_all;
     uint32_t mgr = kernel::R32(kCopManager);
     no_cops.Apply(o.cheat_no_police, mgr && mem::IsCommitted(mgr + kNoNewCops) ? mgr + kNoNewCops : 0);
     unlock_all.Apply(o.cheat_unlock_all, kUnlockAllThings);
+    static uint32_t marked = 0;  // the cheats marked this boot
+    uint32_t on = (o.cheat_nos ? 1 : 0) | (o.cheat_speedbreaker ? 2 : 0) | (o.cheat_cash ? 4 : 0) |
+                  (o.cheat_no_police ? 8 : 0) | (o.cheat_unlock_all ? 16 : 0);
+    if (on & ~marked) {
+        marked |= on;
+        MarkCheatsUsed();
+    }
 }
 
 // The movies' screens skip on A or START: FEAnyMovie (0x116230, the FE's and the story's), InGameAnyMovie (0x131A30)

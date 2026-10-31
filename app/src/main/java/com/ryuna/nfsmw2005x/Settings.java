@@ -66,6 +66,8 @@ final class Settings {
     static final String K_CHEAT_CASH = "cheat_cash";
     static final String K_CHEAT_COPS = "cheat_no_police";
     static final String K_CHEAT_UNLOCK = "cheat_unlock_all";
+    static final String K_CHEAT_SET_CASH = "cheat_set_cash";  // cash to set once, 0 none; native applies and clears it
+    static final int MAX_CASH = 9_999_999;                     // native kMaxCash
     // Sound
     static final String K_AUDIO_OUT = "audio_output"; // 0 auto, 1 stereo, 2 5.1, 3 mono
     // Touch controls
@@ -231,6 +233,16 @@ final class Settings {
     /** v when it is in min..max, else def. */
     static int within(long v, int min, int max, int def) {
         return v >= min && v <= max ? (int) v : def;
+    }
+
+    /** A Set cash entry (digits, "," "." spaces and "$" allowed as separators) as 0..MAX_CASH, or -1 when it is not
+     *  one. */
+    static int parseCash(String s) {
+        if (s == null) return -1;
+        String d = s.trim().replaceAll("[,.\\s$]", "");
+        if (d.isEmpty() || d.length() > 7 || !d.matches("[0-9]+")) return -1;
+        int v = Integer.parseInt(d);
+        return v <= MAX_CASH ? v : -1;
     }
 
     /** One key into the settings file, the rest of it as it is. */

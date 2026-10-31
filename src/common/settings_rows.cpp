@@ -4,6 +4,7 @@
 #include "common/settings_rows.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -73,7 +74,8 @@ enum : int {
 enum : int { kControlMode = 300, kSteering, kTiltSens, kOpacity, kSize, kEditButtons, kEditHud };
 // SYSTEM
 enum : int { kLanguage = 400, kAudioOutput, kSkipMovies, kActiveSave, kAbout };
-// CHEATS: task 6 fills these
+// CHEATS
+enum : int { kCheatNos = 500, kCheatSpeedbreaker, kCheatNoPolice, kCheatUnlockAll, kCheatMaxCash, kSetCash, kApplyCash };
 
 // ---- tables ----
 
@@ -244,7 +246,55 @@ const std::vector<Row> kSystemRows = {
     {Kind::Action, kAbout, "About"},
 };
 
-const std::vector<Row> kCheatsRows;  // task 6
+const std::vector<Row> kCheatsRows = {
+    {Kind::Toggle, kCheatNos, "Infinite nitrous"},
+    {Kind::Toggle, kCheatSpeedbreaker, "Infinite speedbreaker"},
+    {Kind::Toggle, kCheatNoPolice, "No police"},
+    {Kind::Toggle, kCheatUnlockAll, "Unlock all"},
+    {Kind::Toggle, kCheatMaxCash, "Lock cash at max"},
+    {Kind::Number, kSetCash, "Set cash"},
+    {Kind::Action, kApplyCash, "Apply cash"},
+};
+
+// Set cash: the value the row shows until APPLY hands it to ApplyCheats (Options::cheat_set_cash); the pending one,
+// else the career's cash, until the player steps it
+constexpr uint32_t kCashStep = 10000;
+uint32_t g_cash_draft = 0;
+bool g_cash_draft_set = false;  // stepped by the player: no longer the pending or career's value
+void EnsureCashDraft() {
+    if (g_cash_draft_set) return;
+    uint32_t cash = 0;
+    const game::Options& o = game::Opt();
+    g_cash_draft = std::min(o.cheat_set_cash ? o.cheat_set_cash : game::CareerCash(cash) ? cash : 0, game::kMaxCash);
+}
+
+// a step of the draft: 10,000, ten times that in a run (the menu reports no hold, only steps: a held left or right
+// that FEng repeats, or quick presses, kHoldSteps steps each within kRepeatMs of the last), kept to 0..kMaxCash
+constexpr int kHoldSteps = 4;
+constexpr uint64_t kRepeatMs = 400;
+uint64_t NowMs() {
+    using namespace std::chrono;
+    return uint64_t(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+}
+void StepCash(int step) {
+    static uint64_t last = 0;
+    static int last_step = 0, run = 0;
+    uint64_t now = NowMs();
+    run = step == last_step && now - last < kRepeatMs ? run + 1 : 0;
+    last = now, last_step = step;
+    int64_t by = int64_t(kCashStep) * (run >= kHoldSteps ? 10 : 1);
+    g_cash_draft = uint32_t(std::clamp<int64_t>(int64_t(g_cash_draft) + step * by, 0, game::kMaxCash));
+    g_cash_draft_set = true;
+}
+
+std::string Grouped(uint32_t v) {
+    std::string digits = std::to_string(v), out;
+    for (size_t i = 0; i < digits.size(); i++) {
+        if (i && (digits.size() - i) % 3 == 0) out += ',';
+        out += digits[i];
+    }
+    return out;
+}
 
 // off Android (no launcher shell): pad_mode, steer and tilt_sens straight in the settings file, the rest kept
 struct ControlState {
@@ -452,6 +502,19 @@ std::string Value(const Row& r, int step) {
         // read-only in the game: the slot is the hard disk the game booted with; the launcher's SAVES changes it
         case kActiveSave: return CurrentSlot();
         case kAbout: return std::string("BUILD ") + BUILD_COMMIT;
+
+        // CHEATS: ApplyCheats (src/game/game.cpp) holds them at each present
+        case kCheatNos: return toggle(o.cheat_nos);
+        case kCheatSpeedbreaker: return toggle(o.cheat_speedbreaker);
+        case kCheatNoPolice: return toggle(o.cheat_no_police);
+        case kCheatUnlockAll: return toggle(o.cheat_unlock_all);
+        case kCheatMaxCash: return toggle(o.cheat_cash);
+        case kSetCash:
+            EnsureCashDraft();
+            if (step) StepCash(step);  // nothing saved: APPLY hands it over
+            return "$" + Grouped(g_cash_draft);
+        // a set cash not yet applied (no profile yet) waits
+        case kApplyCash: return o.cheat_set_cash ? "PENDING" : "";
         default: return "";
     }
 }
@@ -459,6 +522,13 @@ std::string Value(const Row& r, int step) {
 void Activate(const Row& r) {
     // the overlay's editor and the HUD editor are the launcher shell's
     if (r.id == kEditButtons || r.id == kEditHud) host::ShellRow(r.id - kControlMode, 1);
+    // the next present with a profile sets it (ApplyCheats); 0 is none, a pending one taken back
+    if (r.id == kApplyCash) {
+        EnsureCashDraft();
+        game::Opt().cheat_set_cash = g_cash_draft;
+        g_cash_draft_set = false;  // the row shows the pending value, then the career's
+        app::Save();
+    }
 }
 
 void Defaults(Category cat) {

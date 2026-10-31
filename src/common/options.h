@@ -19,6 +19,8 @@ inline bool KnownLanguage(const std::string& code) {
 // SSAA renders at twice the height, the presenter averages it down
 inline constexpr uint32_t kAaOff = 0, kAaFxaa = 1, kAaSsaa = 2;
 
+inline constexpr uint32_t kMaxCash = 9999999;  // the cash cheats' top, the most the career's counter shows
+
 struct Options {
     bool fps_counter = false;
     uint32_t fps_position = 0;  // the counter's place, src/common/menu.cpp's kFpsPositionNames
@@ -49,6 +51,10 @@ struct Options {
     bool cheat_cash = false;          // the career's cash kept at kCheatCash
     bool cheat_no_police = false;     // no new cops or pursuits
     bool cheat_unlock_all = false;    // every car, part and race unlocked
+    // the career's cash to set once (0 none, at most kMaxCash): the launcher's or the CHEATS row's, applied at the first
+    // present with a profile and then 0 in the settings file again; native's from Load on (the launcher writes it
+    // only while the game is not running)
+    uint32_t cheat_set_cash = 0;
     bool skip_movies = false;         // the movies end as they start, src/game/game.cpp
     uint32_t audio_output = 0;  // audio::kOutputAuto, kOutputStereo, kOutputSurround or kOutputMono
     std::string language = "int";  // one of kLanguages
@@ -67,6 +73,8 @@ void WaitWhileUnfocused();  // native/game_host.cpp: game thread, before the pre
 void WidenAspect();         // src/game/game.cpp: game thread, at each present
 void ApplyGraphicsSwitches();  // src/game/game.cpp: game thread, at each present
 void ApplyCheats();            // src/game/game.cpp: game thread, at each present
+// src/game/game.cpp, game thread: the career profile's cash; false while no profile is named (made or loaded)
+bool CareerCash(uint32_t& cash);
 bool Racing();    // src/game/game.cpp, any thread: the game flow is in a race (free roam too), not loading or the front end
 
 }  // namespace game

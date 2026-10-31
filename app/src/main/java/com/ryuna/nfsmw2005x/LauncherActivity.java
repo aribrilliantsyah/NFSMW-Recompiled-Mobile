@@ -17,9 +17,11 @@ import android.text.InputType;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.View;
+import android.widget.Button;
 import android.widget.EditText;
 import java.io.File;
 import java.io.IOException;
+import java.util.Locale;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -126,6 +128,7 @@ public class LauncherActivity extends Activity {
         left.addView(touchCard());
         left.addView(controllerCard());
         left.addView(gameplayCard());
+        left.addView(cheatsCard());
         right.addView(displayCard());
         right.addView(graphicsCard());
         right.addView(soundCard());
@@ -501,26 +504,65 @@ public class LauncherActivity extends Activity {
                 v -> put(Settings.K_LANGUAGE, v == 1 ? "ind" : "int")));
         c.addView(ui.toggle("Skip movies", "The intro and the game's videos end as they start (the engine's cutscenes still play).",
                 flag(Settings.K_SKIP_MOVIES, false), v -> put(Settings.K_SKIP_MOVIES, v)));
-        TextView head = ui.section("▸ CHEATS");
+        return c;
+    }
+
+    static final int CHEATS_ORANGE = 0xFFF28C1C;
+
+    /** CHEATS: the game's CHEATS rows (src/common/settings_rows.cpp) in an orange bordered card of its own. */
+    private LinearLayout cheatsCard() {
+        LinearLayout c = ui.card();
+        c.setBackground(ui.box(UiKit.CARD, CHEATS_ORANGE, 14));
+        TextView head = ui.section("CHEATS");
+        head.setTextColor(CHEATS_ORANGE);
         c.addView(head);
-        LinearLayout body = ui.column();
-        body.setVisibility(View.GONE);
-        body.addView(ui.toggle("Infinite nitrous", null, flag(Settings.K_CHEAT_NOS, false),
+        c.addView(ui.summary("A slot played with a cheat on is tagged CHEATS ON in SAVES."));
+        c.addView(ui.toggle("Infinite nitrous", null, flag(Settings.K_CHEAT_NOS, false),
                 v -> put(Settings.K_CHEAT_NOS, v)));
-        body.addView(ui.toggle("Infinite speedbreaker", null, flag(Settings.K_CHEAT_SB, false),
+        c.addView(ui.toggle("Infinite speedbreaker", null, flag(Settings.K_CHEAT_SB, false),
                 v -> put(Settings.K_CHEAT_SB, v)));
-        body.addView(ui.toggle("Max cash", "Keeps the career's cash at 9,999,999; it ends up in the save.",
-                flag(Settings.K_CHEAT_CASH, false), v -> put(Settings.K_CHEAT_CASH, v)));
-        body.addView(ui.toggle("No police", "No new cops or pursuits; one already on goes on.",
+        c.addView(ui.toggle("No police", "No new cops or pursuits; one already on goes on.",
                 flag(Settings.K_CHEAT_COPS, false), v -> put(Settings.K_CHEAT_COPS, v)));
-        body.addView(ui.toggle("Unlock all", "Every car, part and race.", flag(Settings.K_CHEAT_UNLOCK, false),
+        c.addView(ui.toggle("Unlock all", "Every car, part and race.", flag(Settings.K_CHEAT_UNLOCK, false),
                 v -> put(Settings.K_CHEAT_UNLOCK, v)));
-        c.addView(body);
-        head.setOnClickListener(v -> {
-            boolean open = body.getVisibility() != View.VISIBLE;
-            body.setVisibility(open ? View.VISIBLE : View.GONE);
-            head.setText(open ? "▾ CHEATS" : "▸ CHEATS");
+        c.addView(ui.toggle("Lock cash at max", "Keeps the career's cash at 9,999,999; it ends up in the save.",
+                flag(Settings.K_CHEAT_CASH, false), v -> put(Settings.K_CHEAT_CASH, v)));
+
+        // Set cash: written as cheat_set_cash, which the game sets once a career profile is loaded and then clears
+        int pending = Settings.within(mToml.getInt(Settings.K_CHEAT_SET_CASH, 0), 0, Settings.MAX_CASH, 0);
+        TextView status = ui.summary("");
+        java.util.function.IntConsumer showStatus = p -> status.setText(p > 0
+                ? String.format(Locale.US, "Pending: $%,d, set when a career profile is loaded in the game.", p)
+                : String.format(Locale.US, "The career's cash, set once when a profile is loaded (0 to %,d).",
+                                Settings.MAX_CASH));
+        EditText cash = new EditText(this);
+        cash.setInputType(InputType.TYPE_CLASS_NUMBER);
+        cash.setSingleLine(true);
+        cash.setHint("0 – 9999999");
+        cash.setText(pending > 0 ? String.valueOf(pending) : "");
+        cash.setTextColor(UiKit.FG);
+        cash.setHintTextColor(UiKit.DIM);
+        cash.setTextSize(14);
+        cash.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        cash.setBackground(ui.box(UiKit.PANEL, 0xFF4A4A4A, 8));
+        cash.setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6));
+        c.addView(ui.row("Set cash", null, cash));
+        showStatus.accept(pending);
+        c.addView(status);
+        c.addView(ui.gap(6));
+        Button apply = ui.secondary("Apply cash", v -> {
+            int value = Settings.parseCash(cash.getText().toString());
+            if (value < 0) {
+                cash.setError("0 to 9,999,999");
+                return;
+            }
+            put(Settings.K_CHEAT_SET_CASH, value);
+            showStatus.accept(value);
+            Toast.makeText(this, value > 0 ? "Cash set when a career profile is loaded" : "Set cash cleared",
+                           Toast.LENGTH_SHORT).show();
         });
+        apply.setTextColor(CHEATS_ORANGE);
+        c.addView(apply);
         return c;
     }
 
