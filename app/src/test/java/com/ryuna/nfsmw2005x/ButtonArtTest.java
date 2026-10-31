@@ -8,29 +8,53 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public class ButtonArtTest {
+    /** native/prompt_icons.cpp's keys: every one an Icon (a key the overlay cannot draw would fall to the letter). */
+    private static final String[] NATIVE_KEYS = {"ACCEPT", "BACK", "CANCEL", "EXIT", "RESTART", "STATS", "EYE",
+        "EYE_OFF", "INFO", "HELP", "DELETE", "EDIT", "CART", "CASH", "MAP", "CAMERA", "OPTIONS", "PLAY", "LIST",
+        "ZOOM_IN", "ZOOM_OUT", "ROTATE", "FORWARD", "SEND", "SORT", "FILTER", "SAVE", "CHAT", "PERSON"};
+
     @Test
-    public void iconForPromptMapsKnownLabels() {
-        assertEquals(ButtonArt.Icon.ACCEPT, ButtonArt.iconForPrompt("ACCEPT"));
-        assertEquals(ButtonArt.Icon.ACCEPT, ButtonArt.iconForPrompt("CONTINUE"));
-        assertEquals(ButtonArt.Icon.ACCEPT, ButtonArt.iconForPrompt("OK"));
-        assertEquals(ButtonArt.Icon.BACK, ButtonArt.iconForPrompt("BACK"));
-        assertEquals(ButtonArt.Icon.RESTART, ButtonArt.iconForPrompt("RESTART"));
-        assertEquals(ButtonArt.Icon.RESTART, ButtonArt.iconForPrompt("RESTART RACE"));
-        assertEquals(ButtonArt.Icon.STATS, ButtonArt.iconForPrompt("STATISTICS"));
-        assertEquals(ButtonArt.Icon.STATS, ButtonArt.iconForPrompt("STATS"));
-        // the labels the game prompts (logged on the phone): the main menu's X, the standings' X
-        assertEquals(ButtonArt.Icon.STATS, ButtonArt.iconForPrompt("GAME STATS"));
-        assertEquals(ButtonArt.Icon.STATS, ButtonArt.iconForPrompt("RACE STATS"));
-        assertEquals(ButtonArt.Icon.EXIT, ButtonArt.iconForPrompt("EXIT"));
-        assertEquals(ButtonArt.Icon.EXIT, ButtonArt.iconForPrompt("QUIT"));
-        assertEquals(ButtonArt.Icon.CANCEL, ButtonArt.iconForPrompt("CANCEL"));
-        assertEquals(ButtonArt.Icon.ZOOM_IN, ButtonArt.iconForPrompt("ZOOM IN"));
-        assertEquals(ButtonArt.Icon.ZOOM_OUT, ButtonArt.iconForPrompt("ZOOM OUT"));
-        // case-insensitive
+    public void iconForKeyMapsEveryNativeKey() {
+        for (String k : NATIVE_KEYS) assertEquals(k, k, ButtonArt.iconForKey(k).name());
+        assertNull(ButtonArt.iconForKey(""));
+        assertNull(ButtonArt.iconForKey(null));
+        assertNull(ButtonArt.iconForKey("NOT_AN_ICON"));
+    }
+
+    @Test
+    public void keyWinsOverLabelAndPad() {
+        // French "RECOMMENCER" knows no English word: the hash's key decides
+        assertEquals(ButtonArt.Icon.RESTART, ButtonArt.iconFor("RESTART", "RECOMMENCER"));
+        assertNull(ButtonArt.iconFor("", "RECOMMENCER"));
+        // Pause_Controller's A is Back: the key, not the pad
+        assertEquals(ButtonArt.Icon.BACK, ButtonArt.iconFor("BACK", "ACCEPT"));
+        assertEquals(ButtonArt.Icon.STATS, ButtonArt.iconFor("", "RACE STATS"));
+    }
+
+    @Test
+    public void textFallbackForTheUsersExamples() {
+        assertEquals(ButtonArt.Icon.RESTART, ButtonArt.iconForPrompt("RANDOMIZE"));
+        for (String s : new String[] {"RACE STATS", "STATISTICS", "VIEW STATS", "GAME STATS", "PLAYER STATS",
+                "PERSONAL STATS", "TOGGLE BIO/STATS"})
+            assertEquals(s, ButtonArt.Icon.STATS, ButtonArt.iconForPrompt(s));
+        assertEquals(ButtonArt.Icon.EYE, ButtonArt.iconForPrompt("VIEW TUTORIAL"));
+    }
+
+    @Test
+    public void textFallbackKeepsNearWordsApart() {
         assertEquals(ButtonArt.Icon.ACCEPT, ButtonArt.iconForPrompt("accept"));
-        assertEquals(ButtonArt.Icon.ZOOM_IN, ButtonArt.iconForPrompt("Zoom In"));
+        assertEquals(ButtonArt.Icon.BACK, ButtonArt.iconForPrompt("BACK"));
+        assertEquals(ButtonArt.Icon.EXIT, ButtonArt.iconForPrompt("QUIT RACE"));
         assertEquals(ButtonArt.Icon.RESTART, ButtonArt.iconForPrompt("restart race"));
+        assertEquals(ButtonArt.Icon.PLAY, ButtonArt.iconForPrompt("START RACE"));    // not RESTART
+        assertEquals(ButtonArt.Icon.CART, ButtonArt.iconForPrompt("VIEW CART"));     // not VIEW CAR's EYE
+        assertEquals(ButtonArt.Icon.EYE, ButtonArt.iconForPrompt("VIEW CAR"));
+        assertEquals(ButtonArt.Icon.DELETE, ButtonArt.iconForPrompt("DELETE CAR"));  // not CART
+        assertEquals(ButtonArt.Icon.LIST, ButtonArt.iconForPrompt("STANDINGS"));
+        assertEquals(ButtonArt.Icon.ZOOM_IN, ButtonArt.iconForPrompt("Zoom In"));
+        assertEquals(ButtonArt.Icon.ZOOM_OUT, ButtonArt.iconForPrompt("ZOOM OUT"));
         assertNull(ButtonArt.iconForPrompt("xyz"));
+        assertNull(ButtonArt.iconForPrompt(""));
         assertNull(ButtonArt.iconForPrompt(null));
     }
 

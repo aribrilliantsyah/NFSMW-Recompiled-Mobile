@@ -163,7 +163,7 @@ final class Settings {
      *  place for it (taken over once), and the launcher's default. */
     private static final Object[][] NATIVE_KEYS = {
         {K_RENDER, K_RENDER, 67}, {K_FPS_CAP, K_FPS_CAP, 60}, {K_VSYNC, K_VSYNC, false},
-        {K_ANISO, "aniso2", 0}, {K_FPS, "show_fps", false}, {K_FPS_POS, K_FPS_POS, 2},
+        {K_ANISO, "aniso2", 0}, {K_FPS, "show_fps", false}, {K_FPS_POS, K_FPS_POS, 0},
         {K_FPS_USAGE, K_FPS_USAGE, true}, {K_FPS_TEMPS, K_FPS_TEMPS, true}, {K_WIDESCREEN, K_WIDESCREEN, true},
         {"aspect_ratio", null, 0}, {K_AA, K_AA, 0}, {K_FILTER, K_FILTER, 0}, {K_YELLOW, K_YELLOW, false},
         {K_REFLECT, K_REFLECT, 0}, {K_ROAD_REFLECT, K_ROAD_REFLECT, true}, {K_MOTION_BLUR, K_MOTION_BLUR, true},

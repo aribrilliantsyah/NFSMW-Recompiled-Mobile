@@ -413,7 +413,7 @@ std::string TriggerLabel(const game::FePrompts& p, int prompt) {
         const std::string& l = p.label[i];
         return !l.empty() && std::none_of(l.begin(), l.end(), [](char c) { return c >= '0' && c <= '9'; });
     };
-    // untranslated: the overlay picks its icon by the label (ButtonArt.iconForPrompt), it draws no text
+    // ZOOM OUT and ZOOM IN in English, the overlay's own: it draws their icons (PromptIcon's keys), no text
     if (!action(game::kFePromptLT) || !action(game::kFePromptRT))
         return prompt == game::kFePromptLT ? "ZOOM OUT" : "ZOOM IN";
     return p.label[prompt];
@@ -430,7 +430,10 @@ std::optional<std::vector<MenuPrompt>> CurrentMenuPrompts() {
     for (int i = 0; i < game::kFePromptCount; i++) {
         if (!p.shown[i]) continue;
         bool trigger = i == game::kFePromptLT || i == game::kFePromptRT;
-        out.push_back({trigger ? TriggerLabel(p, i) : p.label[i], i});
+        std::string label = trigger ? TriggerLabel(p, i) : p.label[i];
+        // the triggers given way to the zoom have its icon whatever their string was (the map's "ZOOM 1.5X")
+        std::string icon = label == "ZOOM OUT" ? "ZOOM_OUT" : label == "ZOOM IN" ? "ZOOM_IN" : PromptIcon(p.hash[i]);
+        out.push_back({std::move(icon), std::move(label), i});
     }
     return out;
 }

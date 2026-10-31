@@ -121,7 +121,9 @@ void GetMouseInfo(X86Context& ctx, uint8_t*) {
 // The menu's button prompts (the bar of "A Accept", "B Back", "Y Defaults"): in its package an image with the pad
 // button's icon and the string after it in its group, the label; hidden ones, or ones in a hidden group, are not up
 constexpr uint32_t kPackageObjects = 0x4C;
-constexpr uint32_t kObjectNext = 0x4, kObjectType = 0x18, kObjectHidden = 1, kImageTexture = 0x24, kStringText = 0x64;
+// FEString: its language hash at +0x60 (after FEObject's 0x5C bytes and the label's name), its text at +0x64
+constexpr uint32_t kObjectNext = 0x4, kObjectType = 0x18, kObjectHidden = 1, kImageTexture = 0x24, kStringHash = 0x60,
+                   kStringText = 0x64;
 constexpr uint32_t kGroupCount = 0x60, kGroupObjects = 0x64;
 constexpr uint32_t kTypeImage = 1, kTypeString = 2, kTypeGroup = 5;
 // the prompts' textures, named for the PS2's buttons: A CROSS, B TRIANGLE, X SQUARE, Y CIRCLE, the triggers L1 and R1;
@@ -231,7 +233,10 @@ void ScanPrompts(uint32_t first, int count, FePrompts& out, int& budget) {
                     pending = i;
                 }
         } else if (type == kTypeString && pending >= 0) {
-            if (out.label[pending].empty()) out.label[pending] = Label(Peek(o + kStringText));
+            if (out.label[pending].empty()) {
+                out.label[pending] = Label(Peek(o + kStringText));
+                out.hash[pending] = Peek(o + kStringHash);
+            }
             pending = -1;
         }
     }

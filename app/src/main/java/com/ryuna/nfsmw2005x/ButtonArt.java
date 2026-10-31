@@ -23,7 +23,10 @@ final class ButtonArt {
     private ButtonArt() { }
 
     enum Icon { NOS, EBRAKE, SPEEDBREAKER, LOOKBACK, CAMERA, GAS, BRAKE, GEAR, START, BACK, MENU, LEFT, RIGHT,
-        ZOOM_IN, ZOOM_OUT, ACCEPT, RESTART, STATS, EXIT, CANCEL }
+        ZOOM_IN, ZOOM_OUT, ACCEPT, RESTART, STATS, EXIT, CANCEL,
+        // the menu prompts' actions (native/prompt_icons.cpp's keys)
+        EYE, EYE_OFF, INFO, HELP, DELETE, EDIT, CART, CASH, MAP, OPTIONS, PLAY, LIST, ROTATE, FORWARD, SEND, SORT,
+        FILTER, SAVE, CHAT, PERSON }
 
     // the pad's colours: A B X Y, grey for the pedals, shoulders and system buttons, White's white
     static final int COLOR_A = 0xFF3FB950, COLOR_B = 0xFFE5534B, COLOR_X = 0xFF4493F8, COLOR_Y = 0xFFE3B341,
@@ -60,24 +63,90 @@ final class ButtonArt {
             case STATS: return "<path d=\"M5 20V12M10 20V6M15 20v-9M20 20V9\"/>";
             case EXIT: return "<path d=\"M14 4h5v16h-5\"/><path d=\"M4 12h10M10 8l4 4-4 4\"/>";
             case CANCEL: return "<path d=\"M6 6l12 12M18 6L6 18\"/>";
+            // drawn for the menu prompts in the mockup's style: 24 grid, the icon's stroke, round ends
+            case EYE: return "<path d=\"M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z\"/><circle cx=\"12\" cy=\"12\" r=\"2.8\"/>";
+            case EYE_OFF: return "<path d=\"M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z\"/><circle cx=\"12\" cy=\"12\" r=\"2.8\"/><path d=\"M4 4l16 16\"/>";
+            case INFO: return "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 11v6M12 7.5v.01\"/>";
+            case HELP: return "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7v.5M12 17v.01\"/>";
+            case DELETE: return "<path d=\"M4.5 7h15M10 7V4.5h4V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5\"/>";
+            case EDIT: return "<path d=\"M4 20l1-4.5L16 4.5l3.5 3.5L8.5 19zM13.5 7l3.5 3.5\"/>";
+            case CART: return "<path d=\"M3 4h2.5l2.2 10.5h10.3L20 7.5H6.5\"/><circle cx=\"9\" cy=\"19\" r=\"1.5\"/><circle cx=\"17\" cy=\"19\" r=\"1.5\"/>";
+            case CASH: return "<rect x=\"2.5\" y=\"6.5\" width=\"19\" height=\"11\" rx=\"2\"/><circle cx=\"12\" cy=\"12\" r=\"2.5\"/><path d=\"M6 12h.01M18 12h.01\"/>";
+            case MAP: return "<path d=\"M3.5 6.5L9 4l6 2.5L20.5 4v13.5L15 20l-6-2.5-5.5 2.5zM9 4v13.5M15 6.5V20\"/>";
+            case OPTIONS: return "<path d=\"M4 7h9M17 7h3M4 17h3M11 17h9\"/><circle cx=\"15\" cy=\"7\" r=\"2\"/><circle cx=\"9\" cy=\"17\" r=\"2\"/>";
+            case PLAY: return "<path d=\"M8 5.5v13l10.5-6.5z\"/>";
+            case LIST: return "<path d=\"M9 7h11M9 12h11M9 17h11M4.5 7h.01M4.5 12h.01M4.5 17h.01\"/>";
+            case ROTATE: return "<path d=\"M8 9.2C4.9 9.8 3 10.8 3 12c0 1.9 4 3.5 9 3.5s9-1.6 9-3.5c0-1.2-1.9-2.2-5-2.8\"/><path d=\"M18.5 7L16 9.2l2.5 2.2\"/>";
+            case FORWARD: return "<path d=\"M19 12H5M19 12l-5-5M19 12l-5 5\"/>";
+            case SEND: return "<path d=\"M3.5 11.5L20.5 4l-7.5 17-2.5-7zM10.5 14l10-10\"/>";
+            case SORT: return "<path d=\"M8 5v14M4.5 15.5L8 19l3.5-3.5M16 19V5M12.5 8.5L16 5l3.5 3.5\"/>";
+            case FILTER: return "<path d=\"M4 5h16l-6 7.5V19l-4-2v-4.5z\"/>";
+            case SAVE: return "<path d=\"M5 4h11l3 3v13H5z\"/><path d=\"M8 4v5h7V4M8 20v-6h8v6\"/>";
+            case CHAT: return "<path d=\"M4.5 5.5h15v10h-8L7 19v-3.5H4.5z\"/>";
+            case PERSON: return "<circle cx=\"12\" cy=\"8\" r=\"3.5\"/><path d=\"M5 20c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5\"/>";
         }
         throw new IllegalArgumentException(String.valueOf(i));
     }
 
-    /** The icon for a menu prompt's label (the game's or the overlay's, any case), null if none fits. */
+    /** native's icon key for a prompt (an Icon's name, by the string's hash: native/prompt_icons.cpp), null for ""
+     *  or a name this build does not know. */
+    static Icon iconForKey(String key) {
+        if (key == null || key.isEmpty()) return null;
+        try {
+            return Icon.valueOf(key);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    // the English labels' words, tried in order when native knows no hash for the string (one set by the game's code
+    // as text, or a string not in its table); the language's own text past English does not match and gets the letter
+    private static final Object[][] WORDS = {
+        {Pattern.compile("^ZOOM OUT$|^ZOOM ALL$"), Icon.ZOOM_OUT},
+        {Pattern.compile("^ZOOM( IN)?$"), Icon.ZOOM_IN},
+        {Pattern.compile("\\bSTAT"), Icon.STATS},
+        {Pattern.compile("\\b(RESTART|RANDOM|REFRESH|RETRY|DEFAULTS?|RESET)"), Icon.RESTART},
+        {Pattern.compile("\\b(TUTORIAL|VIEW (CAR|RIVAL CAR|PLAYER|INVITE)|READ|SHOWCASE|SHOW ICONS?)\\b"), Icon.EYE},
+        {Pattern.compile("^HIDE\\b"), Icon.EYE_OFF},
+        {Pattern.compile("^(ACCEPT|CONTINUE|OK|YES|DONE|SELECT|READY)$"), Icon.ACCEPT},
+        {Pattern.compile("^(BACK|BACKWARD)$"), Icon.BACK},
+        {Pattern.compile("^FORWARD$"), Icon.FORWARD},
+        {Pattern.compile("^(CANCEL|NO|DECLINE)$"), Icon.CANCEL},
+        {Pattern.compile("^(EXIT|QUIT|QUIT RACE|LEAVE ROOM)$"), Icon.EXIT},
+        {Pattern.compile("\\b(DELETE|CLEAR|REMOVE)\\b"), Icon.DELETE},
+        {Pattern.compile("\\b(CART|BUY CAR|ADD NEW CAR|CHECKOUT)\\b"), Icon.CART},
+        {Pattern.compile("\\b(SELL CAR|RELEASE|USE CASH)\\b"), Icon.CASH},
+        {Pattern.compile("\\b(MAP|GPS|VIEW TRACK)\\b"), Icon.MAP},
+        {Pattern.compile("\\b(CAMERA|CHANGE VIEW|SWITCH VIEW|LOOK BEHIND)\\b"), Icon.CAMERA},
+        {Pattern.compile("\\b(OPTIONS|ADVANCED|BASIC)\\b"), Icon.OPTIONS},
+        {Pattern.compile("^(CUSTOMIZE CAR|EDIT|VIEW/EDIT PRESETS)$"), Icon.EDIT},
+        {Pattern.compile("^(STANDINGS|INFRACTIONS|MILESTONES|PURSUIT|LOAD CARS)$|\\b(SMS|BLACKLIST)\\b"), Icon.LIST},
+        {Pattern.compile("\\b(CHALLENGE|PREVIEW|SKIP|DRIVE NOW|DELIVER|NEXT|MOVIE|START|RESUME)\\b"), Icon.PLAY},
+        {Pattern.compile("^TIPS$"), Icon.INFO},
+        {Pattern.compile("^HELP$"), Icon.HELP},
+        {Pattern.compile("^ROTATE$"), Icon.ROTATE},
+        {Pattern.compile("^(SORT|RE-ORDER)$"), Icon.SORT},
+        {Pattern.compile("\\b(FILTER|SEARCH|COLUMNS)\\b"), Icon.FILTER},
+        {Pattern.compile("^(SAVE|LOAD)$"), Icon.SAVE},
+        {Pattern.compile("^(REPLY|SEND MESSAGE)$"), Icon.SEND},
+        {Pattern.compile("^CHAT$"), Icon.CHAT},
+        {Pattern.compile("^(INVITE|JOIN)$"), Icon.PERSON},
+    };
+
+    /** The icon for a menu prompt's English label (the game's, cut at 24 and upcased, or the overlay's; any case),
+     *  null if none fits. */
     static Icon iconForPrompt(String label) {
         if (label == null) return null;
-        switch (label.trim().toUpperCase(Locale.ROOT)) {
-            case "ACCEPT": case "CONTINUE": case "OK": return Icon.ACCEPT;
-            case "BACK": return Icon.BACK;
-            case "RESTART": case "RESTART RACE": return Icon.RESTART;
-            case "STATISTICS": case "STATS": case "GAME STATS": case "RACE STATS": return Icon.STATS;
-            case "EXIT": case "QUIT": return Icon.EXIT;
-            case "CANCEL": return Icon.CANCEL;
-            case "ZOOM IN": return Icon.ZOOM_IN;
-            case "ZOOM OUT": return Icon.ZOOM_OUT;
-            default: return null;
-        }
+        String l = label.trim().toUpperCase(Locale.ROOT);
+        if (l.isEmpty()) return null;
+        for (Object[] w : WORDS) if (((Pattern) w[0]).matcher(l).find()) return (Icon) w[1];
+        return null;
+    }
+
+    /** A prompt's icon: native's key first, then the label's English words; null draws the pad's letter. */
+    static Icon iconFor(String key, String label) {
+        Icon i = iconForKey(key);
+        return i != null ? i : iconForPrompt(label);
     }
 
     /** What the SVG reader writes: one begin per element (rect, circle, path), then its outline. */

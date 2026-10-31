@@ -647,32 +647,48 @@ public final class TouchControllerView extends View {
         invalidate();
     }
 
-    /** nativeMenuPrompts' { label, pad, ... } as buttons: the triggers on the left, the rest a centred row. */
+    /** nativeMenuPrompts' { icon, pad, label, ... } as buttons in the screen's side columns, off the game's menu (in
+     *  the middle): A/B/X/Y up the right edge, the main action lowest by the thumb, BACK above it, the rest above
+     *  that; the triggers (ZOOM OUT over ZOOM IN) up the left edge, where the D-pad is hidden in menus. Both columns
+     *  keep the pedals' margin from the edge and start under the top row (BACK/☰/START, the camera). */
     private List<Prompt> layoutPrompts(String[] p) {
-        List<Prompt> out = new ArrayList<>(), row = new ArrayList<>();
-        for (int i = 0; i + 1 < p.length; i += 2) {
+        List<Prompt> out = new ArrayList<>(), face = new ArrayList<>();
+        float r = 1.15f / 2 * unit, margin = .0248f * width, pitch = 2 * r + .5f * unit;
+        // four slots from y .30 down, filled from the lowest
+        float lowest = .30f * height + 3 * pitch;
+        for (int i = 0; i + 2 < p.length; i += 3) {
             int pad = Arrays.asList(PROMPT_PADS).indexOf(p[i + 1]);
             if (pad < 0) continue;
+            Prompt b = new Prompt(pad, ButtonArt.iconFor(p[i], p[i + 2]));
+            b.r = r;
             if (pad >= 4) {
-                // ZOOM OUT / ZOOM IN where they zoom (the showcase, the map); unnamed (track select's region switch),
-                // the trigger's letters
-                Prompt z = new Prompt(pad, ButtonArt.iconForPrompt(p[i]));
-                z.cx = .045f * width;
-                z.cy = (pad == 4 ? .62f : .76f) * height;
-                z.r = .5f * unit;
-                out.add(z);
+                // ZOOM OUT / ZOOM IN where they zoom (the showcase, the map); unnamed (track select's region
+                // switch), the trigger's letters
+                b.cx = margin + r;
+                b.cy = lowest - (pad == 4 ? pitch : 0);
+                out.add(b);
             } else {
-                row.add(new Prompt(pad, ButtonArt.iconForPrompt(p[i])));
+                face.add(b);
             }
         }
-        for (int i = 0; i < row.size(); i++) {
-            Prompt b = row.get(i);
-            b.cx = (.5f + (i - (row.size() - 1) / 2f) * .08f) * width;
-            b.cy = .86f * height;
-            b.r = 1.15f / 2 * unit;
+        // stable: equal ranks keep the pad's order (A B X Y)
+        java.util.Collections.sort(face, (a, b) -> Integer.compare(rank(a), rank(b)));
+        // at most four (A B X Y), so one column holds them
+        for (int k = 0; k < face.size(); k++) {
+            Prompt b = face.get(k);
+            b.cx = width - margin - r;
+            b.cy = lowest - k * pitch;
             out.add(b);
         }
         return out;
+    }
+
+    /** A face prompt's place up the column: the accept (or, with none, A) lowest, then back, then the rest. */
+    private static int rank(Prompt p) {
+        if (p.icon == ButtonArt.Icon.ACCEPT) return 0;
+        if (p.pad == 0 && p.icon != ButtonArt.Icon.BACK && p.icon != ButtonArt.Icon.CANCEL) return 1;
+        if (p.icon == ButtonArt.Icon.BACK || p.icon == ButtonArt.Icon.CANCEL) return 2;
+        return 3;
     }
 
     /** The race controls a menu covers let go of what they held. */

@@ -105,6 +105,10 @@ void DrawFpsCounter(double fps) {
     uint32_t pos = o.fps_position;
     bool bottom = pos == kFpsBottomLeft || pos == kFpsBottom || pos == kFpsBottomRight;
     float y = bottom ? screen.y - margin - pill_h : margin;
+    // Top sits under the touch overlay's top row (TouchControllerView: BACK/☰/START centred at 0.07 of the height,
+    // 0.7 of its unit min(w/16, h/9) high), the one place clear of its controls in both layouts: the corners are
+    // XBOX's triggers and MOBILE's camera
+    if (pos == kFpsTop) y = screen.y * 0.07f + 0.35f * std::min(screen.x / 16.0f, screen.y / 9.0f) + margin * 0.5f;
     float x = (pos == kFpsTopLeft || pos == kFpsBottomLeft) ? margin :
               ((pos == kFpsTopRight || pos == kFpsBottomRight) ? screen.x - margin - pill_w : (screen.x - pill_w) * 0.5f);
 

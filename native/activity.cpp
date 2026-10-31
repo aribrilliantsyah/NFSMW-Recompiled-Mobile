@@ -66,17 +66,17 @@ JNIEXPORT void JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeLooseRelease
 }
 
 // TouchControllerView, a few times a second: the FEng menu's button prompts, for the icon buttons it draws over the
-// menu. null with no menu up, else { label, pad, label, pad, ... }, pad one of A B X Y LT RT (the button a tap on it
-// presses)
+// menu. null with no menu up, else { icon, pad, label, icon, pad, label, ... }: icon ButtonArt.Icon's name ("" when
+// the string is not known), pad one of A B X Y LT RT (the button a tap on it presses), label the game's text
 JNIEXPORT jobjectArray JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeMenuPrompts(JNIEnv* env, jclass) {
     std::optional<std::vector<touch::MenuPrompt>> prompts = touch::CurrentMenuPrompts();
     if (!prompts) return nullptr;
     static constexpr const char* kPads[] = {"A", "B", "X", "Y", "LT", "RT"};
     jclass string = env->FindClass("java/lang/String");
-    jobjectArray out = env->NewObjectArray(jsize(prompts->size() * 2), string, nullptr);
+    jobjectArray out = env->NewObjectArray(jsize(prompts->size() * 3), string, nullptr);
     jsize i = 0;
     for (const touch::MenuPrompt& p : *prompts) {
-        for (const char* s : {p.label.c_str(), kPads[p.pad]}) {
+        for (const char* s : {p.icon.c_str(), kPads[p.pad], p.label.c_str()}) {
             jstring v = env->NewStringUTF(s);
             env->SetObjectArrayElement(out, i++, v);
             env->DeleteLocalRef(v);

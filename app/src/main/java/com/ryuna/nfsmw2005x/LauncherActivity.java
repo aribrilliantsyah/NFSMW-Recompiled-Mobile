@@ -539,7 +539,7 @@ public class LauncherActivity extends Activity {
                 flag(Settings.K_FPS, false), v -> put(Settings.K_FPS, v)));
         c.addView(ui.choice("FPS position", null,
                 new String[] {"Top", "Top left", "Top right", "Bottom left", "Bottom", "Bottom right"},
-                new int[] {0, 1, 2, 3, 4, 5}, num(Settings.K_FPS_POS, 2), v -> put(Settings.K_FPS_POS, v)));
+                new int[] {0, 1, 2, 3, 4, 5}, num(Settings.K_FPS_POS, 0), v -> put(Settings.K_FPS_POS, v)));
         c.addView(ui.toggle("FPS: CPU / GPU load", null, flag(Settings.K_FPS_USAGE, true),
                 v -> put(Settings.K_FPS_USAGE, v)));
         c.addView(ui.toggle("FPS: temperatures", null, flag(Settings.K_FPS_TEMPS, true),
