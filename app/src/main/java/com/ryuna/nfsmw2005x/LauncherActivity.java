@@ -32,7 +32,7 @@ import android.widget.Toast;
  * Graphics, Sound, Advanced (collapsed). Landscape: two columns of cards.
  */
 public class LauncherActivity extends Activity {
-    private static final int REQ_TREE = 1, REQ_ISO = 2;
+    private static final int REQ_TREE = 1, REQ_ISO = 2, REQ_BACKUP = 3, REQ_RESTORE = 4;
 
     private SharedPreferences mPrefs;
     private TomlSettings mToml;
@@ -44,6 +44,8 @@ public class LauncherActivity extends Activity {
     private android.widget.Button mIsoBtn, mIsoSmall;
     private TextView mPlayHint;
     private volatile boolean mCancelExtract;
+    private LinearLayout mSlotList;
+    private String mBackupSlot;   // the slot whose backup the document picker is naming
 
     @Override
     protected void onCreate(Bundle b) {
@@ -52,6 +54,7 @@ public class LauncherActivity extends Activity {
         mPrefs = Settings.prefs(this);
         ui = new UiKit(this);
         loadNative();
+        migrateSaves();
         setContentView(build());
         refreshDir();
         android.view.WindowInsetsController c = getWindow().getInsetsController();
@@ -71,6 +74,7 @@ public class LauncherActivity extends Activity {
         }
         refreshDir();               // back from the permission screen
         refreshPads();
+        refreshSaves();             // back from the game: dates, sizes, the cheats mark
     }
 
     // ---------------------------------------------------------------- layout
@@ -100,6 +104,7 @@ public class LauncherActivity extends Activity {
         page.addView(cols);
 
         left.addView(gameCard());
+        left.addView(savesCard());
         left.addView(touchCard());
         left.addView(controllerCard());
         left.addView(gameplayCard());
@@ -163,6 +168,238 @@ public class LauncherActivity extends Activity {
         pl.topMargin = ui.dp(12);
         c.addView(mPlay, pl);
         return c;
+    }
+
+    // ---------------------------------------------------------------- saves
+
+    private LinearLayout savesCard() {
+        LinearLayout c = ui.card();
+        c.addView(ui.section("SAVES"));
+        c.addView(ui.summary("Save slots live in the game folder (saves/). Under Android/data they are removed with "
+                + "the app: back up first."));
+        mSlotList = ui.column();
+        c.addView(mSlotList);
+        LinearLayout row = new LinearLayout(this);
+        row.addView(ui.secondary("New slot", v -> askName("New slot", "", n -> job("Slot " + n.trim() + " created",
+                () -> Settings.saveSlots(this).create(n)))), new LinearLayout.LayoutParams(0, -2, 1f));
+        row.addView(ui.gap(8));
+        row.addView(ui.secondary("Restore backup…", v -> pickRestore()), new LinearLayout.LayoutParams(0, -2, 1f));
+        c.addView(row);
+        refreshSaves();
+        return c;
+    }
+
+    private void refreshSaves() {
+        if (mSlotList == null) return;
+        mSlotList.removeAllViews();
+        if (Settings.checkGameDir(Settings.gameDir(this)) != null) {
+            mSlotList.addView(ui.summary("Choose the game folder first."));
+            return;
+        }
+        String active = Settings.saveSlot(this);
+        java.util.List<SaveSlots.Slot> slots = Settings.saveSlots(this).list();
+        if (slots.isEmpty()) mSlotList.addView(ui.summary("No slots yet: PLAY makes Main."));
+        java.text.DateFormat df = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM,
+                                                                           java.text.DateFormat.SHORT);
+        for (SaveSlots.Slot s : slots) {
+            boolean on = s.name.equals(active);
+            StringBuilder sum = new StringBuilder();
+            if (s.profile != null) sum.append(s.profile).append(" · ");
+            sum.append(df.format(new java.util.Date(s.lastModified))).append(" · ")
+               .append(String.format(java.util.Locale.US, "%,d KB", (s.sizeBytes + 1023) >> 10));
+            LinearLayout r = ui.column();
+            r.setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6));
+            r.setBackground(ui.box(on ? UiKit.PANEL : UiKit.CARD, on ? UiKit.OK : UiKit.LINE, 8));
+            LinearLayout top = new LinearLayout(this);
+            top.addView(ui.text((on ? "● " : "") + s.name, 15, on ? UiKit.OK : UiKit.FG));
+            if (s.cheatsUsed) {
+                TextView tag = ui.text("  CHEATS ON", 11, 0xFFF28C1C);
+                tag.setTypeface(Typeface.DEFAULT_BOLD);
+                top.addView(tag);
+            }
+            r.addView(top);
+            r.addView(ui.summary(sum.toString()));
+            r.setOnClickListener(v -> slotActions(s.name));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = ui.dp(6);
+            mSlotList.addView(r, lp);
+        }
+    }
+
+    private void slotActions(String name) {
+        String[] acts = {"Select", "Duplicate", "Rename", "Delete", "Back up…"};
+        new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(name)
+            .setItems(acts, (d, w) -> {
+                switch (w) {
+                    case 0:
+                        mPrefs.edit().putString(Settings.K_SAVE_SLOT, name).apply();
+                        refreshSaves();
+                        break;
+                    case 1:
+                        askName("Copy of " + name, name + " copy", n -> job("Copied into " + n.trim(),
+                                () -> Settings.saveSlots(this).duplicate(name, n)));
+                        break;
+                    case 2:
+                        askName("Rename " + name, name, n -> job("Renamed to " + n.trim(), () -> {
+                            Settings.saveSlots(this).rename(name, n);
+                            if (name.equals(Settings.saveSlot(this)))
+                                mPrefs.edit().putString(Settings.K_SAVE_SLOT, n.trim()).apply();
+                        }));
+                        break;
+                    case 3:
+                        if (refuseWhileGame()) return;
+                        new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                            .setTitle("Delete " + name + "?")
+                            .setMessage("Its saves are gone for good unless you have a backup.")
+                            .setPositiveButton("Delete", (d2, w2) -> job("Deleted " + name,
+                                    () -> Settings.saveSlots(this).delete(name)))
+                            .setNegativeButton("Cancel", null)
+                            .show();
+                        break;
+                    default:
+                        pickBackup(name);
+                }
+            })
+            .show();
+    }
+
+    private void askName(String title, String def, java.util.function.Consumer<String> ok) {
+        EditText e = new EditText(this);
+        e.setSingleLine(true);
+        e.setText(def);
+        e.setSelectAllOnFocus(true);
+        LinearLayout box = ui.column();
+        box.setPadding(ui.dp(20), ui.dp(8), ui.dp(20), 0);
+        box.addView(e, new LinearLayout.LayoutParams(-1, -2));
+        new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(title)
+            .setView(box)
+            .setPositiveButton("OK", (d, w) -> ok.accept(e.getText().toString()))
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
+    private interface SaveJob { void run() throws IOException; }
+
+    /** File work off the UI thread; the list again and the outcome after. */
+    private void job(String done, SaveJob j) {
+        new Thread(() -> {
+            String err = null;
+            try {
+                j.run();
+            } catch (IOException | RuntimeException e) {   // SAF's providers throw SecurityException and the like
+                err = e.getMessage() != null ? e.getMessage() : e.toString();
+            }
+            final String msg = err;
+            runOnUiThread(() -> {
+                refreshSaves();
+                if (msg != null) alert("Saves", msg);
+                else Toast.makeText(this, done, Toast.LENGTH_SHORT).show();
+            });
+        }, "saves").start();
+    }
+
+    /** The game reads and writes the slot while it runs: no restore or delete under it. */
+    private boolean refuseWhileGame() {
+        android.app.ActivityManager am = getSystemService(android.app.ActivityManager.class);
+        java.util.List<android.app.ActivityManager.RunningAppProcessInfo> ps = am == null ? null
+                : am.getRunningAppProcesses();
+        if (ps != null)
+            for (android.app.ActivityManager.RunningAppProcessInfo p : ps)
+                if ((getPackageName() + ":game").equals(p.processName)) {
+                    alert("The game is running", "Exit the game (☰ > Exit) first.");
+                    return true;
+                }
+        return false;
+    }
+
+    private void pickBackup(String slot) {
+        mBackupSlot = slot;
+        String day = new java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(new java.util.Date());
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("application/zip")
+            .putExtra(Intent.EXTRA_TITLE, "NFSMW-" + slot + "-" + day + ".zip");
+        try {
+            startActivityForResult(i, REQ_BACKUP);
+        } catch (Exception e) {
+            Toast.makeText(this, "No file picker on this phone.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void pickRestore() {
+        if (Settings.checkGameDir(Settings.gameDir(this)) != null) {
+            Toast.makeText(this, "Choose the game folder first.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (refuseWhileGame()) return;
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("*/*")
+            .putExtra(Intent.EXTRA_MIME_TYPES, new String[] {"application/zip", "application/x-zip-compressed",
+                                                              "application/octet-stream"});
+        try {
+            startActivityForResult(i, REQ_RESTORE);
+        } catch (Exception e) {
+            Toast.makeText(this, "No file picker on this phone.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void backup(Uri uri, String slot) {
+        job("Backed up " + slot, () -> {
+            try (java.io.OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+                if (out == null) throw new IOException("Cannot write the backup file");
+                Settings.saveSlots(this).backup(slot, out);
+            }
+        });
+    }
+
+    /** A picked zip: into the slot its name gives (NFSMW-<slot>-<date>.zip) or one the player names. */
+    private void restore(Uri uri) {
+        String file = null;
+        try (android.database.Cursor c = getContentResolver().query(uri,
+                new String[] {android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (c != null && c.moveToFirst()) file = c.getString(0);
+        } catch (Exception ignored) { }
+        String def = "Restored";
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("NFSMW-(.+)-\\d{8}.*\\.zip")
+                .matcher(file == null ? "" : file);
+        if (m.matches()) def = m.group(1);
+        askName("Restore into slot", def, n -> {
+            SaveSlots slots = Settings.saveSlots(this);
+            String name = n.trim();
+            Runnable go = () -> job("Restored into " + name, () -> {
+                try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
+                    if (in == null) throw new IOException("Cannot read the backup file");
+                    slots.restore(in, name, true);
+                }
+            });
+            if (!name.isEmpty() && slots.dir(name).exists()) {
+                if (refuseWhileGame()) return;
+                new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle("Replace " + name + "?")
+                    .setMessage("Its current saves go into an auto-" + name + "-….zip in the saves folder first.")
+                    .setPositiveButton("Replace", (d, w) -> go.run())
+                    .setNegativeButton("Cancel", null)
+                    .show();
+            } else {
+                go.run();
+            }
+        });
+    }
+
+    /** Once: the hard disk of the builds before slots (files/hdd, else game/UDATA) becomes Main. */
+    private void migrateSaves() {
+        if (mPrefs.getBoolean(Settings.K_SAVES_MIGRATED, false)) return;
+        String game = Settings.gameDir(this);
+        if (Settings.checkGameDir(game) != null) return;
+        try {
+            Settings.saveSlots(this).migrateLegacy(new File(Settings.filesDir(this), "hdd"), new File(game, "UDATA"));
+            mPrefs.edit().putBoolean(Settings.K_SAVES_MIGRATED, true).apply();
+        } catch (IOException e) {
+            alert("Cannot move the saves into slots", e.getMessage() + "\n\nThe old saves are untouched.");
+        }
     }
 
     private LinearLayout touchCard() {
@@ -396,6 +633,7 @@ public class LauncherActivity extends Activity {
         while (d.length() > 1 && d.endsWith("/")) d = d.substring(0, d.length() - 1);
         mPrefs.edit().putString(Settings.K_GAME_DIR, d).apply();
         refreshDir();
+        refreshSaves();
     }
 
     private boolean needsAllFiles(String dir) {
@@ -548,12 +786,13 @@ public class LauncherActivity extends Activity {
                     }
                     return !mCancelExtract;
                 });
-                // keep the saves of an earlier install
-                File oldU = new File(game, "UDATA");
-                if (oldU.isDirectory()) {
-                    File newU = new File(tmp, "UDATA");
-                    deleteTree(newU);
-                    if (!oldU.renameTo(newU)) throw new java.io.IOException("Cannot keep the saves (UDATA)");
+                // keep the saves of an earlier install: the slots, and the old LLE build's UDATA
+                for (String keep : new String[] {"saves", "UDATA"}) {
+                    File old = new File(game, keep);
+                    if (!old.isDirectory()) continue;
+                    File moved = new File(tmp, keep);
+                    deleteTree(moved);
+                    if (!old.renameTo(moved)) throw new java.io.IOException("Cannot keep the saves (" + keep + ")");
                 }
                 deleteTree(game);
                 if (!tmp.renameTo(game)) throw new java.io.IOException("Cannot rename game.tmp to game");
@@ -623,6 +862,12 @@ public class LauncherActivity extends Activity {
             if (res == RESULT_OK && data != null && data.getData() != null) installIso(data.getData());
             return;
         }
+        if (req == REQ_BACKUP || req == REQ_RESTORE) {
+            if (res != RESULT_OK || data == null || data.getData() == null) return;
+            if (req == REQ_BACKUP && mBackupSlot != null) backup(data.getData(), mBackupSlot);
+            else if (req == REQ_RESTORE) restore(data.getData());
+            return;
+        }
         if (req != REQ_TREE || res != RESULT_OK || data == null || data.getData() == null) return;
         String path = treeToPath(data.getData());
         if (path == null) {
@@ -655,6 +900,16 @@ public class LauncherActivity extends Activity {
             return;
         }
         try {
+            migrateSaves();
+            // the slot PLAY hands the game: the chosen one, or Main when that is gone
+            SaveSlots slots = Settings.saveSlots(this);
+            String slot = Settings.saveSlot(this);
+            if (!slots.dir(slot).isDirectory()) {
+                if (!slots.dir(SaveSlots.MAIN).isDirectory()) slots.create(SaveSlots.MAIN);
+                if (!slot.equals(SaveSlots.MAIN))
+                    Toast.makeText(this, "Slot " + slot + " is missing: playing Main.", Toast.LENGTH_LONG).show();
+                mPrefs.edit().putString(Settings.K_SAVE_SLOT, SaveSlots.MAIN).commit();
+            }
             Settings.writeNativeFiles(this);
         } catch (Exception e) {
             Toast.makeText(this, "Cannot save settings: " + e.getMessage(), Toast.LENGTH_LONG).show();

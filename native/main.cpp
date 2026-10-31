@@ -107,6 +107,7 @@ float RefreshRate() {
 
 namespace app {
 const std::string& GameDirSetting();
+std::filesystem::path SaveRoot();
 }
 
 namespace host {
@@ -139,6 +140,9 @@ const char* kModes[] = {"fullscreen", "borderless", "windowed"};
 constexpr int kDefaults = 3;
 // the game folder the launcher picked (Settings.gameDir), its key game_dir in the settings file
 std::string g_game_dir;
+// the active save slot's folder (SaveSlots: <game folder>/saves/<slot>), save_dir in the settings file; the launcher's
+// key, never written here (Save keeps it)
+std::string g_save_dir;
 
 std::filesystem::path File() { return ExeDir() / kGame.settings; }
 
@@ -211,6 +215,7 @@ void Load() {
     s.aniso = t["anisotropic_filtering"].value_or(s.aniso);
     s.join_ip = t["join_ip"].value_or(s.join_ip);
     g_game_dir = t["game_dir"].value_or(std::string());
+    g_save_dir = t["save_dir"].value_or(std::string());
     if (t["defaults"].value_or(int64_t(0)) < kDefaults) PhoneFrameDefaults(s);
     for (const Option& o : kGame.options) {
         if (o.flag) *o.flag = t[o.key].value_or(*o.flag);
@@ -220,6 +225,15 @@ void Load() {
 }
 
 const std::string& GameDirSetting() { return g_game_dir; }
+
+// the hard disk kernel::Boot mounts: the slot when it is there, else the one hdd beside the settings of the builds
+// before slots (a slot the launcher had to give up on is never made here)
+std::filesystem::path SaveRoot() {
+    std::error_code ec;
+    if (!g_save_dir.empty() && std::filesystem::is_directory(g_save_dir, ec)) return g_save_dir;
+    if (!g_save_dir.empty()) LOGW("app: save_dir %s is not a folder, using hdd", g_save_dir.c_str());
+    return ExeDir() / "hdd";
+}
 
 // our values into the file's tables, leaf by leaf: a table we write ([keys]) keeps the entries we do not know
 static void Merge(toml::table& into, const toml::table& from) {
@@ -421,7 +435,9 @@ int main(int, char**) {
     InitUi();
     input::Init();
     if (app::kGame.window) app::kGame.window(g_window);
-    if (!kernel::Boot(std::move(game.xbe), IMAGE_XBE, game.dir.string(), (app::ExeDir() / "hdd").string())) {
+    std::filesystem::path saves = app::SaveRoot();
+    LOGR("app: save dir: %s", saves.c_str());
+    if (!kernel::Boot(std::move(game.xbe), IMAGE_XBE, game.dir.string(), saves.string())) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, Utf8(app::kGame.short_title).c_str(),
                                  app::Ui("The game failed to start, see the log in the logs folder.", false).c_str(),
                                  g_window);

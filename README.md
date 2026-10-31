@@ -24,7 +24,7 @@ The game's x86 code is statically recompiled ahead of time to C++ with [XboxXBE-
 2. Open **NFS Most Wanted** and tap **INSTALL FROM ISO…**: pick the Xbox disc image (`.iso`). It is extracted once into `Android/data/com.ryuna.nfsmw2005x/files/game` (about 2.9 GB); the `.iso` can be deleted afterwards. A folder extracted on a PC (`default.xbe` with the disc's `NFS` folder beside it) works too: **Choose folder…** (asks for all files access).
 3. Tap **PLAY**.
 
-The launcher writes the engine's settings (`mostwanted.toml`) and the HUD layout (`layout.toml`) in `Android/data/com.ryuna.nfsmw2005x/files` at each PLAY; saves (`hdd`), the shader cache and the logs (`logs`) are there too.
+The launcher writes the engine's settings (`mostwanted.toml`) and the HUD layout (`layout.toml`) in `Android/data/com.ryuna.nfsmw2005x/files` at each PLAY; the shader cache and the logs (`logs`) are there too. Saves are slots in the game folder (`game/saves/<slot>`, `Main` by default), managed in the launcher's SAVES card: back them up to a .zip before uninstalling, as Android removes `Android/data` with the app.
 
 The supported disc is the USA Black Edition (`default.xbe` SHA-1 `f636a16af04171089f879a4bed646e185c734233`).
 

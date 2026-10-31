@@ -172,6 +172,8 @@ namespace {
 
 const char* kModes[] = {"fullscreen", "borderless", "windowed"};
 constexpr int kDefaults = 3;
+// the save slot's folder (save_dir in the settings file, as the launcher writes it on the phone); empty: hdd here
+std::string g_save_dir;
 
 std::filesystem::path File() { return ExeDir() / kGame.settings; }
 
@@ -229,11 +231,20 @@ void Load() {
     s.fps_cap = t["fps_cap"].value_or(s.fps_cap);
     s.vsync = t["vsync"].value_or(s.vsync);
     s.aniso = t["anisotropic_filtering"].value_or(s.aniso);
+    g_save_dir = t["save_dir"].value_or(std::string());
     for (const Option& o : kGame.options) {
         if (o.flag) *o.flag = t[o.key].value_or(*o.flag);
         else *o.value = t[o.key].value_or(*o.value);
     }
     if (kGame.load) kGame.load(&t);
+}
+
+// the hard disk kernel::Boot mounts, as native/main.cpp picks it
+std::filesystem::path SaveRoot() {
+    std::error_code ec;
+    if (!g_save_dir.empty() && std::filesystem::is_directory(g_save_dir, ec)) return g_save_dir;
+    if (!g_save_dir.empty()) LOGW("app: save_dir %s is not a folder, using hdd", g_save_dir.c_str());
+    return ExeDir() / "hdd";
 }
 
 // our values into the file's tables, leaf by leaf: a table we write ([keys]) keeps the entries we do not know
@@ -411,7 +422,9 @@ int main(int, char**) {
     OpenPad();
     input::Init();
     if (app::kGame.window) app::kGame.window(g_window);
-    if (!kernel::Boot(std::move(game.xbe), IMAGE_XBE, game.dir.string(), (app::ExeDir() / "hdd").string())) {
+    std::filesystem::path saves = app::SaveRoot();
+    LOGR("app: save dir: %s", saves.c_str());
+    if (!kernel::Boot(std::move(game.xbe), IMAGE_XBE, game.dir.string(), saves.string())) {
         LOGE("app: boot failed");
         logx::Flush();
         return 1;

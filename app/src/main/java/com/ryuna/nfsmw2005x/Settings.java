@@ -32,6 +32,8 @@ import java.util.Locale;
 final class Settings {
     // Game
     static final String K_GAME_DIR = "game_dir";
+    static final String K_SAVE_SLOT = "save_slot";        // the active slot's name (SaveSlots)
+    static final String K_SAVES_MIGRATED = "saves_migrated";  // the hdd before slots went into Main once
     // Display
     static final String K_FPS = "fps_counter";
     static final String K_FPS_POS = "fps_position";   // native FpsPosition 0..5
@@ -134,6 +136,10 @@ final class Settings {
         return prefs(c).getString(K_GAME_DIR, defaultGameDir(c));
     }
 
+    static SaveSlots saveSlots(Context c) { return new SaveSlots(new File(gameDir(c))); }
+
+    static String saveSlot(Context c) { return prefs(c).getString(K_SAVE_SLOT, SaveSlots.MAIN); }
+
     /** null when the folder holds a readable default.xbe, else the reason. */
     static String checkGameDir(String dir) {
         File xbe = new File(dir, "default.xbe");
@@ -227,8 +233,9 @@ final class Settings {
         t.save(nativeFile(c));
     }
 
-    /** At PLAY: the settings file with the game folder and the controller mapping from the preferences, every other
-     *  key as the launcher and the game left it; layout.toml and perf from the preferences. */
+    /** At PLAY: the settings file with the game folder, the active save slot's folder (save_dir) and the controller
+     *  mapping from the preferences, every other key as the launcher and the game left it; layout.toml and perf from
+     *  the preferences. */
     static void writeNativeFiles(Context c) throws IOException {
         SharedPreferences p = prefs(c);
         File dir = filesDir(c);
@@ -237,6 +244,7 @@ final class Settings {
         t.removeLine(OLD_HEADER);
         if (!t.has("defaults")) t.put("defaults", 3);
         t.put("game_dir", gameDir(c));
+        t.put("save_dir", saveSlots(c).dir(saveSlot(c)).getAbsolutePath());
         for (int i = 0; i < XBOX_INPUTS.length; i++) t.put("padmap." + XBOX_INPUTS[i], mapping(p, i));
         t.put("padmap." + K_DEADZONE, p.getInt(K_DEADZONE, 8));
         t.put("padmap." + K_INVERT_LY, p.getBoolean(K_INVERT_LY, false));
