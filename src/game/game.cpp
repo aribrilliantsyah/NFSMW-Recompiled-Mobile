@@ -11,6 +11,7 @@
 #include "common/aspect.h"
 #include "common/options.h"
 #include "cpu/x86_ops.h"
+#include "core/log.h"
 #include "kernel/kernel.h"
 #include "kernel/memory.h"
 
@@ -192,7 +193,10 @@ void ApplyCheats() {
     first = false;
     uint32_t cash = CashAddress();
     if (o.cheat_set_cash != kNoCash && cash) {
-        kernel::W32(cash, uint32_t(std::clamp<int64_t>(o.cheat_set_cash, 0, kMaxCash)));
+        uint32_t amount = uint32_t(std::clamp<int64_t>(o.cheat_set_cash, 0, kMaxCash)), before = kernel::R32(cash);
+        kernel::W32(cash, amount);
+        // the one trace of a set cash: the career's own screens show it only past the prologue
+        LOGR("cheats: career cash %u -> %u (read back %u)", before, amount, kernel::R32(cash));
         o.cheat_set_cash = kNoCash;
         MarkCheatsUsed();
         // consumed: the file's request (applied now, or replaced by the CHEATS row's) is answered, until then retried
