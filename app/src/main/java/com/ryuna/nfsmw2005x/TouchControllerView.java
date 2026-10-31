@@ -5,7 +5,6 @@ import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.hardware.Sensor;
@@ -62,18 +61,19 @@ public final class TouchControllerView extends View {
     private static final String HELP = "Drag to move · SIZE: selected or all";
     private static final int ACCENT = Color.rgb(0x6F, 0x74, 0x32);
     private static final int PRESSED = Color.argb(190, 0x6F, 0x74, 0x32);
-    private static final int FILL = Color.argb(95, 10, 10, 12);
-    private static final int EDGE = Color.argb(210, 255, 255, 255);
     private static final int UI_BG = Color.argb(190, 16, 17, 20);
 
     private static final int K_STICK = 0, K_ROUND = 1, K_RECT = 2, K_PEDAL = 3, K_DPAD = 4, K_ARROW = 5;
 
     /** One on-screen control. */
     private final class Control {
-        final String id, label, sub;
+        final String id;
+        final ButtonArt.Icon icon;          // null: the letter alone
+        final String badge;                 // the pad button's name on the icon's badge
+        final String letter;                // FULL draws the pad's letter instead of the icon, as the pad has it
         final int kind, digital, face, trigger, arrow;
         final float baseW, baseH;          // radius in w for round/stick/dpad
-        int color = EDGE;
+        int color = ButtonArt.COLOR_GREY;
         int visibleIn;                      // bit per mode
         final float[] fx = new float[MODES], fy = new float[MODES], fs = new float[MODES];
         final float[] px = new float[MODES], py = new float[MODES], ps = new float[MODES];
@@ -83,9 +83,9 @@ public final class TouchControllerView extends View {
         float kx, ky;                       // stick knob offset, -1..1
         int pointer = -1;
 
-        Control(String id, String label, String sub, int kind, int digital, int face, int trigger,
-                int arrow, float baseW, float baseH) {
-            this.id = id; this.label = label; this.sub = sub; this.kind = kind;
+        Control(String id, ButtonArt.Icon icon, String badge, String letter, int kind, int digital, int face,
+                int trigger, int arrow, float baseW, float baseH) {
+            this.id = id; this.icon = icon; this.badge = badge; this.letter = letter; this.kind = kind;
             this.digital = digital; this.face = face; this.trigger = trigger; this.arrow = arrow;
             this.baseW = baseW; this.baseH = baseH;
         }
@@ -138,7 +138,6 @@ public final class TouchControllerView extends View {
     private final Paint frame = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint.FontMetrics fm = new Paint.FontMetrics();
     private final RectF r = new RectF();
-    private final Path path = new Path();
     private final float density;
     private float width, height, unit;
 
@@ -308,30 +307,30 @@ public final class TouchControllerView extends View {
         final int F = Settings.MODE_FULL, S = Settings.MODE_STEERING;
 
         // ---------------- FULL: the original Xbox controller ----------------
-        Control lt = add(new Control("lt", "LT", null, K_RECT, 0, -1, 1, 0, 1.45f, .62f));
-        Control rt = add(new Control("rt", "RT", null, K_RECT, 0, -1, 2, 0, 1.45f, .62f));
+        Control lt = add(new Control("lt", ButtonArt.Icon.BRAKE, null, null, K_RECT, 0, -1, 1, 0, 1.45f, .62f));
+        Control rt = add(new Control("rt", ButtonArt.Icon.GAS, null, null, K_RECT, 0, -1, 2, 0, 1.45f, .62f));
 
-        Control back = add(new Control("back", "BACK", null, K_RECT, BACK, -1, 0, 0, .95f, .44f));
-        Control start = add(new Control("start", "START", null, K_RECT, START, -1, 0, 0, .95f, .44f));
+        Control back = add(new Control("back", ButtonArt.Icon.BACK, null, null, K_RECT, BACK, -1, 0, 0, .95f, .44f));
+        Control start = add(new Control("start", ButtonArt.Icon.START, null, null, K_RECT, START, -1, 0, 0, .95f, .44f));
 
-        Control ls = add(new Control("ls", "L", null, K_STICK, 0, -1, 0, 0, .9f, 0));
-        Control rs = add(new Control("rs", "R", null, K_STICK, 0, -1, 0, 0, .9f, 0));
+        Control ls = add(new Control("ls", null, null, null, K_STICK, 0, -1, 0, 0, .9f, 0));
+        Control rs = add(new Control("rs", null, null, null, K_STICK, 0, -1, 0, 0, .9f, 0));
 
-        Control dpad = add(new Control("dpad", "", null, K_DPAD, 0, -1, 0, 0, .95f, 0));
+        Control dpad = add(new Control("dpad", null, null, null, K_DPAD, 0, -1, 0, 0, .95f, 0));
 
-        Control a = add(new Control("a", "A", "E-BRAKE", K_ROUND, 0, A, 0, 0, .40f, 0));
-        Control b = add(new Control("b", "B", "NOS", K_ROUND, 0, B, 0, 0, .40f, 0));
-        Control x = add(new Control("x", "X", "SPEED", K_ROUND, 0, X, 0, 0, .40f, 0));
-        Control y = add(new Control("y", "Y", "LOOK", K_ROUND, 0, Y, 0, 0, .40f, 0));
-        a.color = Color.rgb(0x3F, 0xB9, 0x50); b.color = Color.rgb(0xE5, 0x53, 0x4B);   // Xbox B red, not the accent
-        x.color = Color.rgb(0x44, 0x93, 0xF8); y.color = Color.rgb(0xE3, 0xB3, 0x41);
+        Control a = add(new Control("a", ButtonArt.Icon.EBRAKE, "A", "A", K_ROUND, 0, A, 0, 0, .40f, 0));
+        Control b = add(new Control("b", ButtonArt.Icon.NOS, "B", "B", K_ROUND, 0, B, 0, 0, .40f, 0));
+        Control x = add(new Control("x", ButtonArt.Icon.SPEEDBREAKER, "X", "X", K_ROUND, 0, X, 0, 0, .40f, 0));
+        Control y = add(new Control("y", ButtonArt.Icon.LOOKBACK, "Y", "Y", K_ROUND, 0, Y, 0, 0, .40f, 0));
+        a.color = ButtonArt.COLOR_A; b.color = ButtonArt.COLOR_B; x.color = ButtonArt.COLOR_X; y.color = ButtonArt.COLOR_Y;
 
-        Control blk = add(new Control("black", "BLK", "CAM", K_ROUND, 0, BLACK, 0, 0, .30f, 0));
-        Control wht = add(new Control("white", "WHT", null, K_ROUND, 0, WHITE, 0, 0, .30f, 0));
-        blk.color = Color.rgb(0x90, 0x90, 0x90);
+        // Black is the camera; its badge an empty disc, as Black has no letter
+        Control blk = add(new Control("black", ButtonArt.Icon.CAMERA, " ", null, K_ROUND, 0, BLACK, 0, 0, .30f, 0));
+        Control wht = add(new Control("white", null, null, "W", K_ROUND, 0, WHITE, 0, 0, .30f, 0));
+        wht.color = ButtonArt.COLOR_WHITE;
 
-        Control l3 = add(new Control("l3", "L3", null, K_ROUND, L3, -1, 0, 0, .28f, 0));
-        Control r3 = add(new Control("r3", "R3", null, K_ROUND, R3, -1, 0, 0, .28f, 0));
+        Control l3 = add(new Control("l3", null, null, "L3", K_ROUND, L3, -1, 0, 0, .28f, 0));
+        Control r3 = add(new Control("r3", null, null, "R3", K_ROUND, R3, -1, 0, 0, .28f, 0));
 
 
         // FULL, placed like a held Xbox controller in the side bars: left
@@ -363,8 +362,8 @@ public final class TouchControllerView extends View {
         // 2026-10-30): left thumb = steering, D-pad, menu buttons and NOS;
         // right thumb = pedals with A, X, Y above them.
         if (steer == Settings.STEER_STICK) ls.at(S, .102f, .778f, 1.3f);
-        Control al = add(new Control("steer_l", "\u25C0", null, K_ARROW, 0, -1, 0, -1, 1.35f, 1.35f));
-        Control ar = add(new Control("steer_r", "\u25B6", null, K_ARROW, 0, -1, 0, 1, 1.35f, 1.35f));
+        Control al = add(new Control("steer_l", ButtonArt.Icon.LEFT, null, null, K_ARROW, 0, -1, 0, -1, 1.35f, 1.35f));
+        Control ar = add(new Control("steer_r", ButtonArt.Icon.RIGHT, null, null, K_ARROW, 0, -1, 0, 1, 1.35f, 1.35f));
         if (steer == Settings.STEER_ARROWS) {
             al.at(S, .063f, .839f, 1f);
             ar.at(S, .137f, .839f, 1f);
@@ -374,11 +373,11 @@ public final class TouchControllerView extends View {
         start.at(S, .14f, .161f, 1.35f);
         blk.at(S, .065f, .069f, 1.2f);
         wht.at(S, .14f, .069f, 1.2f);
-        Control gas = add(new Control("gas", "RT", "GAS", K_PEDAL, 0, -1, 2, 0, 1.25f, 2.5f));
-        Control brk = add(new Control("brake", "LT", "BRAKE", K_PEDAL, 0, -1, 1, 0, 1.15f, 1.9f));
+        Control gas = add(new Control("gas", ButtonArt.Icon.GAS, "RT", null, K_PEDAL, 0, -1, 2, 0, 1.25f, 2.5f));
+        Control brk = add(new Control("brake", ButtonArt.Icon.BRAKE, "LT", null, K_PEDAL, 0, -1, 1, 0, 1.15f, 1.9f));
         gas.at(S, .939f, .811f, 1f);
         brk.at(S, .848f, .841f, 1f);
-        Control boost = add(new Control("nos", "B", "NOS", K_ROUND, 0, B, 0, 0, .46f, 0));
+        Control boost = add(new Control("nos", ButtonArt.Icon.NOS, "B", null, K_ROUND, 0, B, 0, 0, .46f, 0));
         boost.color = b.color;
         boost.at(S, .219f, .599f, 1.2f);
         a.at(S, .937f, .495f, 1.05f);
@@ -493,108 +492,40 @@ public final class TouchControllerView extends View {
         return false;
     }
 
-    private int alpha(int color, float a) {
-        return Color.argb(Math.round(Color.alpha(color) * a), Color.red(color), Color.green(color), Color.blue(color));
-    }
-
     private void drawControl(Canvas canvas, Control c) {
         float op = opacity[mode];
-        stroke.setColor(alpha(c.color, op));
         switch (c.kind) {
             case K_STICK: {
                 float rad = c.w();
-                fill.setColor(alpha(FILL, op));
-                canvas.drawCircle(c.cx, c.cy, rad, fill);
-                canvas.drawCircle(c.cx, c.cy, rad, stroke);
-                float kx = c.cx + c.kx * rad * .6f, ky = c.cy + c.ky * rad * .6f;
-                fill.setColor(alpha(c.down ? PRESSED : Color.argb(170, 200, 200, 205), op));
-                canvas.drawCircle(kx, ky, rad * .42f, fill);
-                label(canvas, c.label, kx, ky, rad * .36f, op);
+                ButtonArt.drawStick(canvas, c.cx, c.cy, rad, c.cx + c.kx * rad * .6f, c.cy + c.ky * rad * .6f, op);
                 break;
             }
             case K_ROUND: {
-                float rad = c.w();
-                fill.setColor(alpha(c.down ? PRESSED : FILL, op));
-                canvas.drawCircle(c.cx, c.cy, rad, fill);
-                canvas.drawCircle(c.cx, c.cy, rad, stroke);
-                if (c.sub != null) {
-                    label(canvas, c.label, c.cx, c.cy - rad * .14f, rad * .62f, op);
-                    label(canvas, c.sub, c.cx, c.cy + rad * .45f, rad * .26f, op);
-                } else {
-                    label(canvas, c.label, c.cx, c.cy, rad * (c.label.length() > 1 ? .55f : .8f), op);
-                }
+                // FULL is the pad itself: its letters; DRIVE names the action, the pad's button on the badge
+                boolean full = mode == Settings.MODE_FULL;
+                if (c.letter != null && (full || c.icon == null))
+                    ButtonArt.drawRound(canvas, c.cx, c.cy, c.w(), c.color, null, c.letter, c.down, op);
+                else
+                    ButtonArt.drawRound(canvas, c.cx, c.cy, c.w(), c.color, c.icon, full ? null : c.badge, c.down, op);
                 break;
             }
-            case K_RECT: case K_PEDAL: case K_ARROW: {
+            case K_ARROW:
+                ButtonArt.drawRound(canvas, c.cx, c.cy, Math.min(c.w(), c.h()) * .5f, c.color, c.icon, null, c.down, op);
+                break;
+            case K_RECT: case K_PEDAL: {
                 r.set(c.cx - c.w() * .5f, c.cy - c.h() * .5f, c.cx + c.w() * .5f, c.cy + c.h() * .5f);
-                float rr = Math.min(c.w(), c.h()) * (c.kind == K_PEDAL ? .22f : .3f);
-                fill.setColor(alpha(c.down ? PRESSED : FILL, op));
-                canvas.drawRoundRect(r, rr, rr, fill);
-                canvas.drawRoundRect(r, rr, rr, stroke);
-                if (c.kind == K_PEDAL) {
-                    // ribs, like a pedal
-                    float sx = r.left + c.w() * .22f, ex = r.right - c.w() * .22f;
-                    for (int i = 1; i <= 3; i++) {
-                        float yy = r.top + c.h() * (.42f + i * .12f);
-                        canvas.drawLine(sx, yy, ex, yy, stroke);
-                    }
-                    label(canvas, c.sub, c.cx, r.top + c.h() * .16f, c.w() * .2f, op);
-                    label(canvas, c.label, c.cx, r.top + c.h() * .34f, c.w() * .3f, op);
-                } else {
-                    label(canvas, c.label, c.cx, c.cy, Math.min(c.h() * .45f, c.w() * .26f) * (c.kind == K_ARROW ? 1.4f : 1f), op);
-                }
+                if (c.kind == K_PEDAL) ButtonArt.drawPedal(canvas, r, c.color, c.icon, c.badge, c.down, op);
+                else ButtonArt.drawPill(canvas, r, c.color, c.icon, c.down, op);
                 break;
             }
-            case K_DPAD: {
-                // one connected cross: five equal squares, the outline only
-                float s = c.w(), q = s * 2f / 3f, h = q * .5f;   // q: side of a square
-                float cx = c.cx, cy = c.cy;
-                int bits = c.down ? currentDpad : 0;
-                path.reset();
-                path.moveTo(cx - h, cy - h - q);
-                path.lineTo(cx + h, cy - h - q);
-                path.lineTo(cx + h, cy - h);
-                path.lineTo(cx + h + q, cy - h);
-                path.lineTo(cx + h + q, cy + h);
-                path.lineTo(cx + h, cy + h);
-                path.lineTo(cx + h, cy + h + q);
-                path.lineTo(cx - h, cy + h + q);
-                path.lineTo(cx - h, cy + h);
-                path.lineTo(cx - h - q, cy + h);
-                path.lineTo(cx - h - q, cy - h);
-                path.lineTo(cx - h, cy - h);
-                path.close();
-                fill.setColor(alpha(FILL, op));
-                canvas.drawPath(path, fill);
-                fill.setColor(alpha(PRESSED, op));
-                if ((bits & UP) != 0) canvas.drawRect(cx - h, cy - h - q, cx + h, cy - h, fill);
-                if ((bits & DOWN) != 0) canvas.drawRect(cx - h, cy + h, cx + h, cy + h + q, fill);
-                if ((bits & LEFT) != 0) canvas.drawRect(cx - h - q, cy - h, cx - h, cy + h, fill);
-                if ((bits & RIGHT) != 0) canvas.drawRect(cx + h, cy - h, cx + h + q, cy + h, fill);
-                canvas.drawPath(path, stroke);
+            case K_DPAD:
+                // the cross spans 2w, as reach() and the arms' hit test have it
+                ButtonArt.drawDpad(canvas, c.cx, c.cy, c.w() * 2f, c.down ? currentDpad : 0, op);
                 break;
-            }
         }
     }
 
     private int currentDpad;
-
-    private void arm(Canvas canvas, float x, float y, float hw, float hh, boolean on, float op) {
-        r.set(x - hw * .5f, y - hh * .5f, x + hw * .5f, y + hh * .5f);
-        if (hw < hh) r.set(x - hw * .5f, y - hh * .5f, x + hw * .5f, y + hh * .5f);
-        fill.setColor(alpha(on ? PRESSED : FILL, op));
-        canvas.drawRoundRect(r, dp(5), dp(5), fill);
-        canvas.drawRoundRect(r, dp(5), dp(5), stroke);
-    }
-
-    private void label(Canvas canvas, String s, float x, float y, float size, float op) {
-        if (s == null || s.isEmpty()) return;
-        text.setTextSize(size);
-        text.setColor(alpha(Color.WHITE, Math.min(1f, op + .15f)));
-        text.getFontMetrics(fm);
-        canvas.drawText(s, x, y - (fm.ascent + fm.descent) * .5f, text);
-        text.setColor(Color.WHITE);
-    }
 
     private void uiButton(Canvas canvas, RectF b, String s, float size) {
         fill.setColor(UI_BG);
