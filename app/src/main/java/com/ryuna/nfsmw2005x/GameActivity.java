@@ -69,7 +69,7 @@ public class GameActivity extends SDLActivity {
         sVibrate = p.getBoolean(Settings.K_VIBRATE, true);
         mPad = new TouchControllerView(this);
         mPad.onMenu = this::showMenu;
-        mPad.onSettings = () -> nativeOpenSettings(-1);
+        mPad.onSettings = this::showMenu;  // the race's ☰: the touch panel, whose Game settings opens the game's
         mLayout.addView(mPad, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                                                          ViewGroup.LayoutParams.MATCH_PARENT));
         nativeSetPad(0, 0, 0, 0, 0, 0);
