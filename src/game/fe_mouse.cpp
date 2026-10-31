@@ -53,6 +53,9 @@ std::atomic<int32_t> g_x{0}, g_y{0};
 std::atomic<bool> g_down{false};
 bool g_reported_down = false;  // the button as GetMouseInfo gave it this update, game thread
 std::atomic<uint32_t> g_presses{0};
+// each touch's ends in FEng's screen, however short it was (a tap shorter than an update is never seen down)
+std::atomic<uint32_t> g_lifts{0};
+std::atomic<int32_t> g_down_x{0}, g_down_y{0}, g_up_x{0}, g_up_y{0};
 // presents the mouse stays on after a touch: past the pointer's leaving, so its regions see it go
 constexpr int kMouseFrames = 30;
 std::atomic<int> g_mouse_frames{0};
@@ -357,14 +360,23 @@ void FeTouch(bool down, float u, float v) {
     g_x = int32_t((u - 0.5f) * wide);
     g_y = int32_t((v - 0.5f) * 480.0f);
     if (down && !g_down) {
+        g_down_x = g_x.load(), g_down_y = g_y.load();
         g_presses++;
         if (g_tap_anywhere) {
             g_accept_package = g_package.load();
             g_accept_button = kAnywhere;
         }
     }
+    if (!down && g_down) {
+        g_up_x = g_x.load(), g_up_y = g_y.load();
+        g_lifts++;
+    }
     g_down = down;
     g_mouse_frames = kMouseFrames;
+}
+
+FeTap FeLastTouch() {
+    return {g_lifts.load(), float(g_down_x.load()), float(g_down_y.load()), float(g_up_x.load()), float(g_up_y.load())};
 }
 
 }  // namespace game

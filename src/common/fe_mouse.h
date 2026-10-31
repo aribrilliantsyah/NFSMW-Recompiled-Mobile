@@ -11,6 +11,12 @@ uint32_t FeMenuPackage();   // any thread: that menu's package, 0 for none (as t
 uint32_t FeInputPackage();  // game thread: the package taking the pad now, as FEng's own walk has it; 0 for none
 bool FeMouseDown();         // game thread: FEng's mouse button down this update
 bool FeFinger(float& x, float& y);  // any thread: the finger in FEng's screen, true while it is down
+// any thread: the last touch's ends in FEng's screen, and how many touches have ended (one shorter than an update too)
+struct FeTap {
+    uint32_t lifts;
+    float down_x, down_y, up_x, up_y;
+};
+FeTap FeLastTouch();
 // the menu's button prompts lately, for A, B, X, Y and the triggers (L and R, the showcase's zoom): shown, and its
 // label in capitals ("DEFAULTS") with the string's language hash (FEString::LabelHash, the same in every language;
 // 0 when the string has none); and whether it prompts the right stick (the showcase's ROTATE, the map's cursor)

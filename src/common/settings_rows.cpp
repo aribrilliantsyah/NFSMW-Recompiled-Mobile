@@ -563,7 +563,8 @@ std::string Value(const Row& r, int step) {
         case kSetCash:
             EnsureCashDraft();
             if (step) StepCash(step);  // nothing saved: APPLY hands it over
-            return "$" + Grouped(g_cash_draft);
+            // no "$": FEng's text takes "$" as the start of a string-table name (0x137E0D) and showed "ion_data"
+            return Grouped(g_cash_draft);
         // a set cash not yet applied (no profile yet) waits
         case kApplyCash: return o.cheat_set_cash != game::kNoCash ? "PENDING" : "";
         default: return "";

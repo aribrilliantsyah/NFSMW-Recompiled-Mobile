@@ -523,31 +523,24 @@ bool OpenRow(X86Context& ctx, uint32_t widget) {
     return true;
 }
 
-bool g_finger_was_down = false, g_finger_moved = false;
-float g_down_x = 0, g_down_y = 0, g_up_x = 0, g_up_y = 0;
+uint32_t g_lifts_seen = 0;
 
 // a touch ended on our rows: an arrow tapped steps its own row, a title or value tapped moves the cursor to it (or
-// opens an action row), a swipe (the finger moved) steps nothing. Seen at each GetMouseInfo: a touch shorter than an
-// update is not seen down here, and steps nothing (FEng's click of it is a finger's, which WidgetAct leaves)
+// opens an action row), a swipe (its ends apart) steps nothing. From the touch's two ends (FeLastTouch), so a tap
+// shorter than an update counts too
 void TapRows(X86Context& ctx) {
     float x, y;
-    bool down = FeFinger(x, y);
-    if (down) {
-        g_finger_at = TouchNowMs();
-        if (!g_finger_was_down) g_down_x = x, g_down_y = y, g_finger_moved = false;
-        else if (std::fabs(x - g_down_x) > kTapSlop || std::fabs(y - g_down_y) > kTapSlop) g_finger_moved = true;
-        g_up_x = x, g_up_y = y;
-    }
-    bool lifted = !down && g_finger_was_down;
-    g_finger_was_down = down;
-    if (!lifted || g_finger_moved) return;
+    if (FeFinger(x, y)) g_finger_at = TouchNowMs();
+    FeTap t = FeLastTouch();
+    if (t.lifts == g_lifts_seen) return;
+    g_lifts_seen = t.lifts;
     g_finger_at = TouchNowMs();
+    if (std::fabs(t.up_x - t.down_x) > kTapSlop || std::fabs(t.up_y - t.down_y) > kTapSlop) return;
     uint32_t current;
     int part = 0, part_down = 0;
-    uint32_t widget = RowAt(ctx, g_up_x, g_up_y, &part);
-    if (!widget || RowAt(ctx, g_down_x, g_down_y, &part_down) != widget || part != part_down ||
-        !LiveWidgets(ctx, current))
-        return;
+    uint32_t widget = RowAt(ctx, t.up_x, t.up_y, &part);
+    uint32_t widget_down = RowAt(ctx, t.down_x, t.down_y, &part_down);
+    if (!widget || widget_down != widget || part != part_down || !LiveWidgets(ctx, current)) return;
     if (widget != current) CallThis(ctx, g_window.screen, kSetCurrent, {widget});
     if (part) {
         Step(ctx, widget, part < 0 ? kLeft : kRight);
@@ -586,7 +579,7 @@ void AddRows(X86Context& ctx, uint32_t screen, int category) {
         W32(g_widget_vtable + kPositionSlot, dispatch::HostThunk(WidgetPosition));
     }
     g_window = Window{screen, category, {}, 0};
-    g_finger_was_down = false;  // a touch from the screen before is not this screen's
+    g_lifts_seen = FeLastTouch().lifts;  // a touch from the screen before is not this screen's
     const auto& rows = Rows();
     size_t visible = std::max<uint32_t>(R32(screen + kScreenVisible), 1);
     while (g_window.widgets.size() < rows.size() && g_window.widgets.size() < visible &&
