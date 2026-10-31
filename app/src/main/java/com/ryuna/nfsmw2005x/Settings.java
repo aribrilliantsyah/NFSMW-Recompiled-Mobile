@@ -186,6 +186,12 @@ final class Settings {
      *  a launcher that kept them there) or the default. A broken file gives the defaults (and is kept as .bad). */
     static TomlSettings nativeSettings(Context c) {
         TomlSettings t = TomlSettings.load(nativeFile(c));
+        fillNative(c, t);
+        return t;
+    }
+
+    /** The keys the launcher shows that t lacks: the old preference's value or the default. */
+    private static void fillNative(Context c, TomlSettings t) {
         SharedPreferences p = prefs(c);
         for (Object[] k : NATIVE_KEYS) {
             String key = (String) k[0], pref = (String) k[1];
@@ -198,7 +204,6 @@ final class Settings {
             }
             t.put(key, v);
         }
-        return t;
     }
 
     /** The overlay's mode, steering and tilt from the settings file (the in-game overlay, the editor); the file is
@@ -230,9 +235,15 @@ final class Settings {
 
     /** One key into the settings file, the rest of it as it is. */
     static void putNative(Context c, String key, Object v) throws IOException {
-        TomlSettings t = nativeSettings(c);
-        t.put(key, v);
-        t.save(nativeFile(c));
+        updateNative(c, t -> t.put(key, v));
+    }
+
+    /** A change to the settings file as it is now, under the lock the game takes too (TomlSettings.update). */
+    static TomlSettings updateNative(Context c, java.util.function.Consumer<TomlSettings> change) throws IOException {
+        return TomlSettings.update(nativeFile(c), t -> {
+            fillNative(c, t);
+            change.accept(t);
+        });
     }
 
     /** At PLAY: the settings file with the game folder, the active save slot's folder (save_dir) and the controller
@@ -242,16 +253,17 @@ final class Settings {
         SharedPreferences p = prefs(c);
         File dir = filesDir(c);
 
-        TomlSettings t = nativeSettings(c);
-        t.removeLine(OLD_HEADER);
-        if (!t.has("defaults")) t.put("defaults", 3);
-        t.put("game_dir", gameDir(c));
-        t.put("save_dir", saveSlots(c).dir(saveSlot(c)).getAbsolutePath());
-        for (int i = 0; i < XBOX_INPUTS.length; i++) t.put("padmap." + XBOX_INPUTS[i], mapping(p, i));
-        t.put("padmap." + K_DEADZONE, p.getInt(K_DEADZONE, 8));
-        t.put("padmap." + K_INVERT_LY, p.getBoolean(K_INVERT_LY, false));
-        t.put("padmap." + K_INVERT_RY, p.getBoolean(K_INVERT_RY, false));
-        t.save(nativeFile(c));
+        String gameDir = gameDir(c), saveDir = saveSlots(c).dir(saveSlot(c)).getAbsolutePath();
+        updateNative(c, t -> {
+            t.removeLine(OLD_HEADER);
+            if (!t.has("defaults")) t.put("defaults", 3);
+            t.put("game_dir", gameDir);
+            t.put("save_dir", saveDir);
+            for (int i = 0; i < XBOX_INPUTS.length; i++) t.put("padmap." + XBOX_INPUTS[i], mapping(p, i));
+            t.put("padmap." + K_DEADZONE, p.getInt(K_DEADZONE, 8));
+            t.put("padmap." + K_INVERT_LY, p.getBoolean(K_INVERT_LY, false));
+            t.put("padmap." + K_INVERT_RY, p.getBoolean(K_INVERT_RY, false));
+        });
 
         StringBuilder l = new StringBuilder("# written by the launcher (HUD layout editor)\n[hud]\n");
         for (int i = 0; i < HUD_IDS.length; i++)

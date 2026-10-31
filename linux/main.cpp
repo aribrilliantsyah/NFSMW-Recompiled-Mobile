@@ -28,6 +28,7 @@
 #include "app/app.h"
 #include "build_info.h"
 #include "common/aspect.h"
+#include "common/settings_lock.h"
 #include "common/settings_menu.h"
 #include "core/input.h"
 #include "core/log.h"
@@ -265,6 +266,7 @@ static void Merge(toml::table& into, const toml::table& from) {
 // through a temporary file so a crash never leaves half of it. One broken since Load is kept as .bad first (as Load
 // does), and left alone if it cannot be
 void Save() {
+    game::SettingsLock lock(File());
     toml::table t;
     std::error_code ec;
     // a file we cannot even look at may still be there: not a missing file to write fresh

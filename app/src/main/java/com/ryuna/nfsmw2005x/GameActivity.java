@@ -205,7 +205,8 @@ public class GameActivity extends SDLActivity {
 
     /** From native (native/activity.cpp ShellRow), the game thread: the game's CONTROLS rows, which are the
      *  overlay's (TouchControllerView.settingsRow; 5 its editor, 6 the HUD editor, opened on a step). Runs on the UI
-     *  thread, waited for a second at most; null when it cannot answer. */
+     *  thread, waited for a second at most; null when it did not answer by then (the row shows its last value; a change
+     *  not begun yet is cancelled, one begun is made, and native never makes it itself on Android). */
     @SuppressWarnings("unused")
     static String settingsRow(int row, int step) {
         GameActivity a = sSelf;
@@ -223,6 +224,8 @@ public class GameActivity extends SDLActivity {
         try {
             return t.get(1, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Exception e) {
+            t.cancel(false);
+            android.util.Log.w("nfsmw", "settings row " + row + ": the overlay did not answer: " + e);
             return null;
         }
     }

@@ -622,7 +622,7 @@ public class LauncherActivity extends Activity {
     private void put(String k, Object v) {
         mToml.put(k, v);
         try {
-            mToml.save(Settings.nativeFile(this));
+            mToml = Settings.updateNative(this, t -> t.put(k, v));  // the file's other keys as they are now
         } catch (IOException e) {
             Toast.makeText(this, "Cannot save settings: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }

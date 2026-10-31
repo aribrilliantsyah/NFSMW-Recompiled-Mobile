@@ -116,6 +116,22 @@ final class TomlSettings {
         lines.removeIf(l -> l.path == null && l.text.equals(text));
     }
 
+    /** A change to the file f as it is now: under the lock the game takes as well (native/main.cpp's app::Save, a
+     *  POSIX record lock on f's ".lock" beside it), f read again, changed, written. Two editors at once (the launcher
+     *  or the overlay and the game) then each keep the other's keys. */
+    static synchronized TomlSettings update(File f, java.util.function.Consumer<TomlSettings> change)
+            throws IOException {
+        // synchronized: a process holds a file's lock once (a second channel's lock() throws), the threads take turns
+        File lock = new File(f.getParentFile(), f.getName() + ".lock");
+        try (java.io.RandomAccessFile r = new java.io.RandomAccessFile(lock, "rw");
+             java.nio.channels.FileLock held = r.getChannel().lock()) {
+            TomlSettings t = load(f);
+            change.accept(t);
+            t.save(f);
+            return t;
+        }
+    }
+
     /** Written to a temporary file renamed over f, so a reader never sees half of it. */
     void save(File f) throws IOException {
         StringBuilder b = new StringBuilder();

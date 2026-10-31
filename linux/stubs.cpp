@@ -2,6 +2,7 @@
 // launcher (the game folder is MW_GAME_DIR, linux/game_files.cpp)
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 namespace host {
@@ -10,7 +11,7 @@ float VulkanGpuLoad();  // native/vulkan.cpp
 
 std::filesystem::path LauncherGameDir() { return {}; }
 void PhoneRumble(uint16_t, uint16_t) {}
-std::string ShellRow(int, int) { return {}; }  // the overlay's rows: the file's own (settings_rows.cpp)
+std::optional<std::string> ShellRow(int, int) { return std::nullopt; }  // no overlay: the file's keys (settings_rows.cpp)
 void SamplePerf() {}
 float CpuLoad() { return -1; }
 float GpuLoad() { return VulkanGpuLoad(); }

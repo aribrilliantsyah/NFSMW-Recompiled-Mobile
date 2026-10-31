@@ -1,4 +1,4 @@
-# Draws the settings menu's six category icons (64x64 ARGB) and writes src/game/category_icons.inc.
+# Draws the settings menu's six category icons and the menus' SETTINGS icon (64x64 ARGB) into src/game/category_icons.inc.
 # 24-unit grid, 2-unit stroke, round caps/joins. White on transparent, except CHEATS (orange #F28C1C).
 # Icons are new drawings, not Rangga's gears-with-subject style.
 # usage: python tools/category_icons.py [preview.png]
@@ -191,19 +191,28 @@ def to_argb(grey_img, colour=None):
     return pixels
 
 
+def write_rows(f, pixels, indent):
+    for row in range(SIZE):
+        vals = ", ".join(f"0x{pixels[row * SIZE + col]:08X}" for col in range(SIZE))
+        comma = "," if row < SIZE - 1 else ""
+        f.write(f"{indent}{vals}{comma}\n")
+
+
 def write_inc(icons_data):
+    """kIcons: the six categories', in settings::Category order; kSettingsIcon: the menus' SETTINGS."""
+    categories, settings = icons_data[:-1], icons_data[-1]
     with open(OUT, "w") as f:
         f.write("// written by tools/category_icons.py, do not edit\n")
-        f.write(f"constexpr int kIconCount = {len(icons_data)};\n")
+        f.write(f"constexpr int kIconCount = {len(categories)};\n")
         f.write(f"constexpr uint32_t kIconSize = {SIZE};\n")
-        f.write(f"constexpr uint32_t kIcons[kIconCount][kIconSize * kIconSize] = {{\n")
-        for idx, pixels in enumerate(icons_data):
+        f.write("constexpr uint32_t kIcons[kIconCount][kIconSize * kIconSize] = {\n")
+        for idx, pixels in enumerate(categories):
             f.write("    {\n")
-            for row in range(SIZE):
-                vals = ", ".join(f"0x{pixels[row * SIZE + col]:08X}" for col in range(SIZE))
-                comma = "," if row < SIZE - 1 else ""
-                f.write(f"        {vals}{comma}\n")
-            f.write("    },\n" if idx < len(icons_data) - 1 else "    }\n")
+            write_rows(f, pixels, "        ")
+            f.write("    },\n" if idx < len(categories) - 1 else "    }\n")
+        f.write("};\n")
+        f.write("constexpr uint32_t kSettingsIcon[kIconSize * kIconSize] = {\n")
+        write_rows(f, settings, "    ")
         f.write("};\n")
 
 
@@ -217,7 +226,7 @@ def main():
         preview_parts.append((name, grey, colour))
 
     write_inc(icons_data)
-    print(f"Wrote {len(icons_data)} icons to {OUT}")
+    print(f"Wrote {len(icons_data) - 1} category icons and SETTINGS' to {OUT}")
 
     if len(sys.argv) > 1:
         # write preview

@@ -38,10 +38,10 @@ void PhoneRumble(uint16_t left, uint16_t right) {
 }
 
 // the game thread: GameActivity.settingsRow answers on the UI thread and waits for it
-std::string ShellRow(int row, int step) {
+std::optional<std::string> ShellRow(int row, int step) {
     auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
     auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
-    if (!env || !activity) return {};
+    if (!env || !activity) return std::string();
     std::string out;
     jclass cls = env->GetObjectClass(activity);
     jmethodID m = env->GetStaticMethodID(cls, "settingsRow", "(II)Ljava/lang/String;");

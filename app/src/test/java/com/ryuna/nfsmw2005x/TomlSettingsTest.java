@@ -201,4 +201,53 @@ public class TomlSettingsTest {
         assertEquals(5, Settings.within(0, 1, 10, 5));
         assertEquals(10, Settings.within(10, 1, 10, 5));
     }
+
+    /** Two writers under the lock each re-read the file: neither loses the other's key. */
+    @Test
+    public void updatesUnderTheLockKeepEachOthersKeys() throws Exception {
+        File f = new File(tmp.getRoot(), "mostwanted.toml");
+        Files.write(f.toPath(), "save_dir = \"/s/Main\"\n".getBytes(StandardCharsets.UTF_8));
+        int n = 20;
+        Thread[] writers = new Thread[n];
+        for (int i = 0; i < n; i++) {
+            int k = i;
+            writers[i] = new Thread(() -> {
+                try {
+                    TomlSettings.update(f, t -> t.put("key" + k, k));
+                } catch (java.io.IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+        for (Thread w : writers) w.start();
+        for (Thread w : writers) w.join();
+        TomlSettings r = TomlSettings.load(f);
+        for (int i = 0; i < n; i++) assertEquals(i, r.getInt("key" + i, -1));
+        assertEquals("/s/Main", r.getString("save_dir", ""));
+        assertTrue(new File(tmp.getRoot(), "mostwanted.toml.lock").exists());
+    }
+
+    /** The game's lock (native: fcntl F_SETLKW on the same .lock file, here python's lockf in another process) holds
+     *  an update off until it goes: the two lock kinds are one. */
+    @Test
+    public void updateWaitsForTheNativeLock() throws Exception {
+        File f = new File(tmp.getRoot(), "mostwanted.toml");
+        File lock = new File(tmp.getRoot(), "mostwanted.toml.lock");
+        Process holder;
+        try {
+            holder = new ProcessBuilder("python3", "-c",
+                    "import fcntl,sys,time\nf=open(sys.argv[1],'a')\nfcntl.lockf(f,fcntl.LOCK_EX)\n"
+                    + "print('held',flush=True)\ntime.sleep(1)", lock.getPath()).start();
+        } catch (java.io.IOException e) {
+            org.junit.Assume.assumeNoException(e);  // no python3 here
+            return;
+        }
+        assertEquals("held", new java.io.BufferedReader(new java.io.InputStreamReader(holder.getInputStream())).readLine());
+        long start = System.nanoTime();
+        TomlSettings.update(f, t -> t.put("bloom", false));
+        long waited = (System.nanoTime() - start) / 1_000_000;
+        holder.waitFor();
+        assertTrue("waited " + waited + " ms", waited >= 500);
+        assertFalse(TomlSettings.load(f).getBool("bloom", true));
+    }
 }

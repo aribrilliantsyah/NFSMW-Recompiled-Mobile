@@ -32,8 +32,9 @@ std::filesystem::path LauncherGameDir();
 void PhoneRumble(uint16_t left, uint16_t right);
 // the in-game settings' CONTROLS rows, which are the overlay's (GameActivity.settingsRow): row 0 mode, 1 steering,
 // 2 tilt sensitivity, 3 opacity, 4 size, 5 the controls' editor, 6 the HUD editor. step != 0 changes the value (opens
-// the editor); the value as shown, empty off Android or when the shell does not answer. Game thread
-std::string ShellRow(int row, int step);
+// the editor). The value as shown; empty when the shell did not answer in time (a change handed to it may still be
+// made: no one else makes it); nullopt with no shell (off Android). Game thread
+std::optional<std::string> ShellRow(int row, int step);
 // the performance overlay's numbers, percent and degrees, -1 where the device does not tell (native/stats.cpp)
 void SamplePerf();
 float CpuLoad();

@@ -25,7 +25,6 @@
 #include "common/options.h"
 #include "common/settings_menu.h"
 #include "common/settings_rows.h"
-#include "common/translations.h"
 #include "core/log.h"
 #include "cpu/x86_ops.h"
 #include "kernel/kernel.h"
@@ -109,7 +108,8 @@ constexpr uint32_t kMainScroller = 0x2C, kScrollerPackage = 0x18, kScrollerPrefi
 uint32_t g_scratch = 0;
 uint32_t g_icon_vtable = 0, g_widget_vtable = 0;
 std::unordered_map<uint32_t, int> g_icons;  // IconOption → category index
-uint32_t g_textures[kIconCount] = {};
+static_assert(kIconCount == settings::kCount, "tools/category_icons.py draws an icon a category");
+uint32_t g_textures[kIconCount + 1] = {};  // the categories', then SETTINGS' (index kCount)
 bool g_settings_next = false;  // next UIOptionsMain is SETTINGS
 uint32_t g_settings_react = 0;
 
@@ -209,7 +209,7 @@ uint32_t MakeTexture(X86Context& ctx, int cat) {
     W32(info + kInfoHash, kIconHashes + uint32_t(cat));
     uint32_t size = kIconSize, shift = Log2(size);
     uint32_t data = mem::AllocContiguous(size * size * 4, 0, 0xFFFFFFFF, 0x1000);
-    const uint32_t* src = kIcons[cat];
+    const uint32_t* src = cat < kIconCount ? kIcons[cat] : kSettingsIcon;
     for (uint32_t y = 0; y < size; y++)
         for (uint32_t x = 0; x < size; x++) W32(data + Swizzle(x, y) * 4, src[y * size + x]);
     uint32_t d3d = plat + kD3D;
@@ -232,9 +232,8 @@ int CurrentCategory() {
     return cat >= 0 && cat < settings::kCount ? cat : -1;
 }
 
-std::string CategoryTitle(int cat) {
-    return TitleCase(app::Ui(settings::Name(settings::Category(cat))));
-}
+// the in-game labels are English whatever the language (spec 2.1): the game's font may lack a translation's letters
+std::string CategoryTitle(int cat) { return settings::Name(settings::Category(cat)); }
 
 // ---- icons ----
 
@@ -342,21 +341,29 @@ void WidgetPosition(X86Context& ctx, uint8_t*) {
     ctx.esp = esp + 4;
 }
 
-// an object's colour: its data's (+0x2C) first field, FEColor (b, g, r, a: 0 to 255 each), as hud_layout.cpp has the
-// place after it (FEObjData: colour +0, pivot +0x10, place +0x1C)
+// an object's colour: its data's (+0x2C) first field, FEColor, four dwords b, g, r, a of 0 to 255 (the packed colour's
+// conversion, 0x159360, writes them so). A change marks the object as FEng's own colour setter does (0x15C903: flags
+// | 0x400000), which the update turns into the render object's invalidation (0x2000000); without it the cached
+// render object keeps the old colour
+constexpr uint32_t kColourDirty = 0x400000;
 void Colour(uint32_t object, uint32_t argb) {
     uint32_t data = object ? Peek(object + kObjectData) : 0;
     if (!data || !mem::IsCommitted(data + 15)) return;
-    W32(data, argb & 0xFF), W32(data + 4, argb >> 8 & 0xFF), W32(data + 8, argb >> 16 & 0xFF);
-    W32(data + 12, argb >> 24);
+    const uint32_t want[] = {argb & 0xFF, argb >> 8 & 0xFF, argb >> 16 & 0xFF, argb >> 24};
+    bool changed = false;
+    for (uint32_t i = 0; i < 4; i++) {
+        if (R32(data + i * 4) == want[i]) continue;
+        W32(data + i * 4, want[i]);
+        changed = true;
+    }
+    if (changed) W32(object + kObjectFlags, R32(object + kObjectFlags) | kColourDirty);
 }
 
 void WidgetDraw(X86Context& ctx, uint8_t*) {
     uint32_t widget = ctx.ecx;
     if (const settings::Row* r = RowOf(widget)) {
-        std::string label = app::Ui(r->label, true);
         std::string value = settings::Value(*r);
-        Print(ctx, R32(widget + kWidgetTitle), TitleCase(label));
+        Print(ctx, R32(widget + kWidgetTitle), r->label);
         Print(ctx, R32(widget + kWidgetValue), TitleCase(value));
         uint32_t esp = ctx.esp;
         CallThis(ctx, widget, R32(R32(widget) + kPositionSlot), {});
@@ -454,8 +461,10 @@ uint32_t PressedRow(X86Context& ctx, uint32_t& current) {
 void FocusTouchedRow(X86Context& ctx) {
     uint32_t current;
     uint32_t pressed = PressedRow(ctx, current);
-    if (pressed && pressed != current)
+    if (pressed && pressed != current) {
         CallThis(ctx, g_window.screen, kSetCurrent, {pressed});
+        current = pressed;  // the arrow's click steps the row it is on, not the one the cursor left
+    }
     if (!g_pending || (!pressed && ++g_pending_updates < kPendingUpdates)) return;
     uint32_t message = g_pending;
     g_pending = 0;
@@ -610,48 +619,60 @@ bool Scroll(X86Context& ctx, uint32_t screen, int step) {
 
 // ---- the ☰'s request (RequestOpenSettings) ----
 //
-// In a race the game is paused first: while the request waits with no menu up, the touch controls pulse START
-// (SettingsWantPause, native/touch.cpp); once the pause menu is up the settings open over it as its OPTIONS opens the
-// game's (0x10F135: the FEDatabase flag 0x10, Pause_Main.fng with 1), so Back comes back to it and the race goes on only
-// on its Resume. Out of a race they open from the menu up, as the main menu's OPTIONS opens MainMenu_Sub.fng
-// (0x1169B0). A category opens its options screen at once, as Accept on its icon does (0x104D40 below)
-constexpr int kNoRequest = -2;
+// In a race the game is paused first: the game thread asks the touch controls for one START (SettingsTakePause,
+// native/touch.cpp) and waits for the ordinary pause menu, Pause_Main.fng with the FEDatabase options flag 0x10 clear
+// (its controller factory builds the pause menu then, UIOptionsMain with the flag set); then the settings open over it
+// as its OPTIONS opens the game's (0x10F135: flag 0x10, Pause_Main.fng with 1), so Back comes back to it and the race
+// goes on only on its Resume. Out of a race they open from any menu up, as the main menu's OPTIONS opens
+// MainMenu_Sub.fng (0x1169B0). A category opens its options screen at once, as Accept on its icon does (0x104D40).
+// The request is a mailbox with a generation: taps while one is in hand only update its category, one handshake sends
+// START once, and only the generation opened is consumed
 constexpr uint64_t kRequestMs = 6000;  // a request the game never got to (a cutscene, a loading screen) is dropped
 constexpr uint32_t kPauseMainFng = 0x3D0618, kMainMenuSubFng = 0x3D5DDC;
 constexpr uint32_t kFlags = 0x12C, kFlagOptions = 0x10;
-std::atomic<int> g_request{kNoRequest};
-std::atomic<uint64_t> g_request_at{0};
-std::atomic<bool> g_pause_sent{false};  // START once a request: a second would resume the race
-bool g_flag_ours = false;  // OpenRequested set the FEDatabase options flag, not a game's OPTIONS
+// the mailbox: generation << 32 | category + 1 (0 the list); generation 0 none yet
+std::atomic<uint64_t> g_mail{0};
+std::atomic<uint64_t> g_mail_at{0};
+std::atomic<bool> g_want_start{false};  // the game thread asks touch.cpp for START
+// game thread
+uint32_t g_done_gen = 0;        // the last generation opened or dropped
+uint32_t g_handshake_gen = 0;   // the generation whose START went (0 none): one START a handshake
+bool g_open = false;            // a SETTINGS session (its list or a category screen of ours) is up
+bool g_flag_ours = false;       // OpenRequested set the FEDatabase options flag, not a game's OPTIONS
 
 uint64_t NowMs() {
     using namespace std::chrono;
     return uint64_t(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
 }
 
-// a package name (guest string) of the options' own: the game's options or SETTINGS, their screens
-bool OptionsPackage(uint32_t name) {
-    if (!name || !Peek(name)) return false;
-    std::string text = kernel::ReadCString(name, 32);
-    for (uint32_t own : {kOptionsFng, kPauseOptionsFng, kPauseMainFng, kMainMenuSubFng})
-        if (text == kernel::ReadCString(own, 32)) return true;
-    return false;
+bool NameIs(uint32_t name, uint32_t want) {
+    return name && Peek(name) && kernel::ReadCString(name, 32) == kernel::ReadCString(want, 32);
 }
 
-// the menu up is one of the options' own packages: the settings are open, or the game's options are
-bool InOptions(uint32_t package) { return OptionsPackage(Peek(package + 0xC)); }
+// the game's options screens a category of ours opens on
+bool ScreenPackage(uint32_t name) { return NameIs(name, kOptionsFng) || NameIs(name, kPauseOptionsFng); }
 
-// SETTINGS left for another package: the next UIOptionsMain is the game's, and the options flag ours goes
+// SETTINGS ends (any other package than ours opening): the next UIOptionsMain is the game's, the options flag goes if
+// it was ours, and the guest's category is a game's again (one of ours left there made the next OPTIONS open ours)
 void LeaveSettings() {
+    g_open = false;
     g_settings_next = false;
-    if (!g_flag_ours) return;
+    if (uint32_t db = R32(kFEDatabase)) {
+        if (g_flag_ours) W32(db + kFlags, R32(db + kFlags) & ~kFlagOptions);
+        if (CurrentCategory() >= 0) W32(Options() + kCategory, 0);
+    }
     g_flag_ours = false;
-    if (uint32_t db = R32(kFEDatabase)) W32(db + kFlags, R32(db + kFlags) & ~kFlagOptions);
 }
 
-void OpenRequested(X86Context& ctx, int category) {
+// the pause menu the race's START brings up, the ordinary one (not the options' UIOptionsMain in the same package)
+bool OrdinaryPause(uint32_t package) {
     uint32_t db = R32(kFEDatabase);
-    if (!db || !R32(db + 0x10)) return;
+    return package && NameIs(Peek(package + 0xC), kPauseMainFng) && db && !(R32(db + kFlags) & kFlagOptions);
+}
+
+bool OpenRequested(X86Context& ctx, int category) {
+    uint32_t db = R32(kFEDatabase);
+    if (!db || !R32(db + 0x10)) return false;
     bool pause = Racing();
     g_flag_ours = !(R32(db + kFlags) & kFlagOptions);
     W32(db + kFlags, R32(db + kFlags) | kFlagOptions);
@@ -660,40 +681,60 @@ void OpenRequested(X86Context& ctx, int category) {
         W32(Options() + kCategory, kFirstCategory + uint32_t(category));  // its Back comes to the categories (0xEB160)
         package = pause ? kPauseOptionsFng : kOptionsFng;
     } else {
+        // one of ours, not the guest's last (its 7 builds another controller, 0x105790, not a UIOptionsMain)
+        W32(Options() + kCategory, kFirstCategory);
         g_settings_next = true;  // the UIOptionsMain it opens is SETTINGS' (0x128AB0)
         package = pause ? kPauseMainFng : kMainMenuSubFng;
     }
+    g_open = true;
     CallThis(ctx, R32(kFEng), kSwitchPackage, {package, pause ? 1u : 0u, 0, 0});
+    return true;
 }
 
 }  // namespace
 
 void RequestOpenSettings(int category) {
-    g_request_at = NowMs();
-    g_pause_sent = false;
-    g_request = category < 0 ? -1 : category;
+    uint64_t mail = g_mail.load();
+    uint64_t next;
+    do next = ((mail >> 32) + 1) << 32 | uint32_t(category < 0 ? 0 : category + 1);
+    while (!g_mail.compare_exchange_weak(mail, next));
+    g_mail_at = NowMs();
 }
 
-bool SettingsTakePause() {
-    return g_request != kNoRequest && Racing() && !FeMenuShown() && !g_pause_sent.exchange(true);
-}
+bool SettingsTakePause() { return g_want_start.exchange(false); }
 
-// game thread, after FEngine::Update (hud_layout.cpp's wrapper): a request opens once a menu is up
+// game thread, after FEngine::Update (hud_layout.cpp's wrapper)
 void SettingsTick(X86Context& ctx) {
-    int request = g_request;
-    if (request == kNoRequest) return;
-    if (NowMs() - g_request_at > kRequestMs) {
-        g_request = kNoRequest;
+    uint64_t mail = g_mail.load();
+    uint32_t gen = uint32_t(mail >> 32);
+    if (gen == g_done_gen) return;
+    int category = int(uint32_t(mail)) - 1;
+    auto drop = [&] {
+        g_done_gen = gen;
+        g_handshake_gen = 0;
+        g_want_start = false;
+    };
+    if (NowMs() - g_mail_at > kRequestMs) return drop();
+    if (g_open) return drop();  // already in SETTINGS
+    uint32_t package = FeMenuPackage();
+    if (Racing()) {
+        if (!OrdinaryPause(package)) {
+            // no menu: START once a handshake (taps meanwhile are the same handshake); another menu (a pursuit's
+            // result, a dialog): wait for it to go
+            if (!package && !g_handshake_gen) {
+                g_handshake_gen = gen;
+                g_want_start = true;
+            }
+            return;
+        }
+    } else if (!package) {
         return;
     }
-    uint32_t package = FeMenuPackage();
-    if (!package) return;  // in a race: SettingsTakePause has START pressed
-    g_request = kNoRequest;
-    if (InOptions(package)) return;
     uint32_t saved[] = {ctx.eax, ctx.ecx, ctx.edx, ctx.ebx, ctx.esi, ctx.edi, ctx.ebp};
-    OpenRequested(ctx, request);
+    bool opened = OpenRequested(ctx, category);
     ctx.eax = saved[0], ctx.ecx = saved[1], ctx.edx = saved[2], ctx.ebx = saved[3], ctx.esi = saved[4];
     ctx.edi = saved[5], ctx.ebp = saved[6];
+    if (opened) drop();
 }
 
 // game thread tick from fe_mouse.cpp's GetMouseInfo: the rows' touches
@@ -711,7 +752,7 @@ using namespace game;
 X86_EXTERN_FUNC(__imp__sub_000C5900);
 X86_FUNC(sub_000C5900) {
     uint32_t icon = kernel::R32(ctx.esp + 4) - kIconHashes;
-    if (icon >= uint32_t(kIconCount)) return __imp__sub_000C5900(ctx, base);
+    if (icon > uint32_t(kIconCount)) return __imp__sub_000C5900(ctx, base);
     if (!g_textures[icon]) g_textures[icon] = MakeTexture(ctx, int(icon));
     ctx.eax = g_textures[icon];
     ctx.esp += 4;
@@ -725,7 +766,10 @@ X86_FUNC(sub_00128AB0) {
     if (from == kAfterIcons) {
         settings = g_settings_next;
         g_settings_next = false;
-        if (settings) AddIcons(ctx, menu, 0, settings::kCount);
+        if (settings) {
+            g_open = true;
+            AddIcons(ctx, menu, 0, settings::kCount);
+        }
         else g_icons.clear();
     } else {
         for (const OptionsMenu& m : kOptionsMenus) {
@@ -770,7 +814,7 @@ X86_FUNC(sub_0012A030) {
     if (it->second < settings::kCount)
         name = CategoryTitle(it->second);
     else
-        name = TitleCase(app::Ui("SETTINGS"));
+        name = "SETTINGS";
     for (uint32_t label : kMainLabels) Print(ctx, kernel::R32(menu + label), name);
     ctx.eax = eax;
 }
@@ -838,14 +882,14 @@ X86_FUNC(sub_000EE570) {
 }
 
 // SwitchPackage (name, arg, 0, 0), thiscall: an options screen of ours leaving for the options (0x105479) comes back
-// to SETTINGS' icons. Any other package than the options' own ends SETTINGS: the next UIOptionsMain is the game's,
-// and the FEDatabase options flag the ☰ set (OpenRequested) goes, else the main menu's next Accept fade still reads
-// it (0x1169A6) and opens the options in place of the item picked (Quick Race opened SETTINGS)
+// to SETTINGS' icons; SETTINGS' own switches (into its list, into a category's screen) keep it; any other switch ends
+// it (LeaveSettings): left by B for the main menu or the ordinary pause, the next UIOptionsMain is the game's and the
+// main menu's next Accept fade no longer reads our options flag (0x1169A6: Quick Race opened SETTINGS)
 X86_EXTERN_FUNC(__imp__sub_000EB160);
 X86_FUNC(sub_000EB160) {
     uint32_t name = kernel::R32(ctx.esp + 4);
-    int cat = kernel::R32(ctx.esp) == kScreenBack ? CurrentCategory() : -1;
-    if (cat >= 0 && cat < settings::kCount) g_settings_next = true;
-    else if (!OptionsPackage(name)) LeaveSettings();
+    int cat = CurrentCategory();
+    if (kernel::R32(ctx.esp) == kScreenBack && cat >= 0) g_settings_next = true;
+    else if (!g_settings_next && !(cat >= 0 && ScreenPackage(name))) LeaveSettings();
     __imp__sub_000EB160(ctx, base);
 }
