@@ -256,6 +256,14 @@ final class Settings {
         return s;
     }
 
+    static void putSteer(TomlSettings t, int s) {
+        t.put(K_STEER, oneOf(s, new int[] {STEER_STICK, STEER_ARROWS, STEER_TILT, STEER_WHEEL}, STEER_STICK));
+    }
+
+    static void putPadMode(TomlSettings t, int m) {
+        t.put(K_PAD_MODE, oneOf(m, new int[] {MODE_XBOX, MODE_MOBILE}, MODE_MOBILE));
+    }
+
     /** A step of a mode's opacity (legacy: touchOpacity's) or size. */
     static int stepTouchLook(TomlSettings t, int mode, boolean opacity, int step, int legacy) {
         int pct = opacity ? stepTouchOpacity(touchOpacity(t, mode, legacy), step)

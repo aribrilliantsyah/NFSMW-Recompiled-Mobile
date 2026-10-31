@@ -278,7 +278,8 @@ bool SlotFree(X86Context& ctx, uint32_t menu) {
     return CallGuest(ctx, kFindImage, {R32(scroller + kScrollerPackage), hash}) != 0;
 }
 
-// add category icons to the SETTINGS menu (0 to kCount-1), or the SETTINGS top-level icon (kCount)
+// add category icons to the SETTINGS menu (0 to kCount-1), or the SETTINGS top-level icon (kCount). CONTROLS is the
+// touch overlay's own (its ⚙ / ☰ menu: mode, steering, tilt, opacity, size, editors), so the game's menu leaves it out
 void AddIcons(X86Context& ctx, uint32_t menu, int first, int last) {
     if (!g_icon_vtable) {
         g_icon_vtable = mem::AllocSystem(8);
@@ -287,6 +288,7 @@ void AddIcons(X86Context& ctx, uint32_t menu, int first, int last) {
     }
     g_icons.clear();
     for (int cat = first; cat < last && SlotFree(ctx, menu); cat++) {
+        if (cat == settings::kControls) continue;
         uint32_t option = CallGuest(ctx, kNew, {kIconOptionSize});
         if (!option) break;
         uint32_t hash = kIconHashes + uint32_t(cat);  // kCount: SETTINGS' own
@@ -803,8 +805,11 @@ X86_FUNC(sub_00128AB0) {
     ctx.ecx = ecx;
     __imp__sub_00128AB0(ctx, base);
     if (settings) {
+        // the scroller's slot: CONTROLS has none, so the ones after it sit one earlier
         int cat = CurrentCategory();
-        ctx.eax = (ctx.eax & ~0xFFu) | uint32_t(cat >= 0 && cat < settings::kCount ? cat : 0);
+        if (cat < 0 || cat >= settings::kCount || cat == settings::kControls) cat = 0;
+        else if (cat > settings::kControls) cat--;
+        ctx.eax = (ctx.eax & ~0xFFu) | uint32_t(cat);
     }
 }
 

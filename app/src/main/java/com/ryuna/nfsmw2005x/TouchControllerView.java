@@ -773,7 +773,7 @@ public final class TouchControllerView extends View {
         if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
             boolean barMenu = !padShown() && menuBtn.contains(x, y);
             if (toggleVisible) {
-                if (gearBtn.contains(x, y)) { openEditor(); return true; }
+                if (gearBtn.contains(x, y)) { releaseAll(); if (onMenu != null) onMenu.run(); return true; }
                 if (toggleBtn.contains(x, y)) {
                     controlsVisible = !controlsVisible;
                     if (!controlsVisible) releaseAll();
@@ -910,6 +910,18 @@ public final class TouchControllerView extends View {
             android.util.Log.w("nfsmw", "cannot save pad_mode: " + e.getMessage());
         }
         send();
+    }
+
+    /** The ☰ panel's layout and steering picks (GameActivity.showMenu): change made on the file under its lock, the
+     *  overlay takes the file's keys as they then are. */
+    void setControl(java.util.function.Consumer<TomlSettings> change) {
+        try {
+            reloadShared(Settings.updateNative(getContext(), change));
+        } catch (java.io.IOException e) {
+            android.util.Log.w("nfsmw", "cannot save a control setting: " + e.getMessage());
+        }
+        send();
+        invalidate();
     }
 
     // -------------------------------------------------------------- to native

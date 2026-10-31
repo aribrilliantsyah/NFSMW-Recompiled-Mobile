@@ -116,19 +116,77 @@ public class GameActivity extends SDLActivity {
         if (mPad != null) mPad.onPauseResume(true);
     }
 
-    /** The hamburger: resume, layout editor, or leave for the launcher. */
+    /** The ☰: the touch controls' settings (mode, MOBILE's steering, tilt, opacity, size, the editors), which the
+     *  game's own SETTINGS leave to the overlay, then the game's settings, resume and leaving for the launcher. Every
+     *  change goes to mostwanted.toml under its lock (TouchControllerView.settingsRow), as the launcher's do. */
     private void showMenu() {
-        String[] items = { "Resume", "Edit touch layout", "Exit to launcher" };
-        android.app.AlertDialog d = new android.app.AlertDialog.Builder(this,
-                android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("NFS Most Wanted")
-            .setItems(items, (dlg, which) -> {
-                if (which == 1 && mPad != null) mPad.openEditor();
-                else if (which == 2) exitToLauncher();
-            })
+        if (mPad == null) return;
+        UiKit ui = new UiKit(this);
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        android.widget.LinearLayout col = ui.column();
+        col.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(10));
+        scroll.addView(col);
+        android.app.AlertDialog[] dlg = new android.app.AlertDialog[1];
+        Runnable[] fill = new Runnable[1];
+        fill[0] = () -> {
+            col.removeAllViews();
+            TomlSettings t = Settings.nativeSettings(this);
+            int mode = Settings.padMode(t), steer = Settings.steer(t);
+            col.addView(ui.section("TOUCH CONTROLS"));
+            col.addView(ui.segmented("Layout", null, new String[] {"MOBILE", "XBOX"},
+                    new int[] {Settings.MODE_MOBILE, Settings.MODE_XBOX}, mode, v -> {
+                        mPad.setControl(f -> Settings.putPadMode(f, v));
+                        fill[0].run();
+                    }));
+            if (mode == Settings.MODE_MOBILE) {
+                col.addView(ui.segmented("Steering", null, new String[] {"Stick", "Arrows", "Wheel", "Tilt"},
+                        new int[] {Settings.STEER_STICK, Settings.STEER_ARROWS, Settings.STEER_WHEEL,
+                                   Settings.STEER_TILT}, steer, v -> {
+                            mPad.setControl(f -> Settings.putSteer(f, v));
+                            fill[0].run();
+                        }));
+                if (steer == Settings.STEER_TILT)
+                    col.addView(ui.stepper("Tilt sensitivity", null, s -> mPad.settingsRow(2, s)));
+            }
+            col.addView(ui.stepper("Opacity", null, s -> mPad.settingsRow(3, s)));
+            col.addView(ui.stepper("Size", null, s -> mPad.settingsRow(4, s)));
+            android.widget.LinearLayout edits = new android.widget.LinearLayout(this);
+            edits.setPadding(0, ui.dp(6), 0, ui.dp(10));
+            android.widget.LinearLayout.LayoutParams half = new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
+            edits.addView(ui.secondary("Edit buttons", v -> { dlg[0].dismiss(); mPad.openEditor(); }), half);
+            android.widget.LinearLayout.LayoutParams half2 = new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
+            half2.leftMargin = ui.dp(8);
+            edits.addView(ui.secondary("Edit HUD (next start)", v -> {
+                dlg[0].dismiss();
+                startActivity(new Intent(this, HudEditorActivity.class));
+            }), half2);
+            col.addView(edits);
+            col.addView(ui.section("GAME"));
+            android.widget.LinearLayout game = new android.widget.LinearLayout(this);
+            game.addView(ui.secondary("Resume", v -> dlg[0].dismiss()),
+                    new android.widget.LinearLayout.LayoutParams(0, -2, 1f));
+            android.widget.LinearLayout.LayoutParams gp = new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
+            gp.leftMargin = ui.dp(8);
+            game.addView(ui.secondary("Game settings", v -> { dlg[0].dismiss(); nativeOpenSettings(-1); }), gp);
+            android.widget.LinearLayout.LayoutParams gp2 = new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
+            gp2.leftMargin = ui.dp(8);
+            game.addView(ui.secondary("Exit to launcher", v -> { dlg[0].dismiss(); exitToLauncher(); }), gp2);
+            col.addView(game);
+        };
+        fill[0].run();
+        dlg[0] = new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
+            .setView(scroll)
             .create();
-        d.setOnDismissListener(x -> hideSystemBars());
-        d.show();
+        dlg[0].setOnShowListener(x -> {
+            Window w = dlg[0].getWindow();
+            if (w != null) {
+                w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(UiKit.CARD));
+                w.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels * 3 / 5, ui.dp(560)),
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+            }
+        });
+        dlg[0].setOnDismissListener(x -> hideSystemBars());
+        dlg[0].show();
     }
 
     private void exitToLauncher() {
