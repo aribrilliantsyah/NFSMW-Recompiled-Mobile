@@ -238,7 +238,7 @@ public class LauncherActivity extends Activity {
                 flag(Settings.K_FPS, false), v -> put(Settings.K_FPS, v)));
         c.addView(ui.choice("Counter position", null,
                 new String[] {"Top center", "Top left", "Top right", "Bottom left", "Bottom center", "Bottom right"},
-                new int[] {0, 1, 2, 3, 4, 5}, num(Settings.K_FPS_POS, 2), v -> put(Settings.K_FPS_POS, v)));
+                new int[] {0, 1, 2, 3, 4, 5}, num(Settings.K_FPS_POS, 0), v -> put(Settings.K_FPS_POS, v)));
         c.addView(ui.toggle("CPU/GPU usage", "On the FPS counter.", flag(Settings.K_FPS_USAGE, true),
                 v -> put(Settings.K_FPS_USAGE, v)));
         c.addView(ui.toggle("Temperatures", "On the FPS counter.", flag(Settings.K_FPS_TEMPS, true),

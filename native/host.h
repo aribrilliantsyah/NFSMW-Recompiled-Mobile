@@ -56,14 +56,18 @@ namespace touch {
 bool OnEvent(const SDL_Event& e);
 // port 0's pad before the game reads it: the menus' taps and swipes, the back key
 void Apply(input::Pad& pad);
-// any thread: the FEng menu's button prompts, each its label ("ACCEPT"; the triggers' ZOOM OUT / ZOOM IN where they
-// zoom) and the pad button it is for (game::FePrompts' index: 0 A, 1 B, 2 X, 3 Y, 4 LT, 5 RT); none with no menu up
-// (the touches the overlay leaves are the menu's pointer and swipes only then)
+// any thread: the FEng menu's button prompts, each its icon (ButtonArt.Icon's name by the string's hash, PromptIcon;
+// "" when unknown), its label ("ACCEPT"; the triggers' ZOOM OUT / ZOOM IN where they zoom) and the pad button it is
+// for (game::FePrompts' index: 0 A, 1 B, 2 X, 3 Y, 4 LT, 5 RT); none with no menu up (the touches the overlay leaves
+// are the menu's pointer and swipes only then)
 struct MenuPrompt {
+    std::string icon;
     std::string label;
     int pad;
 };
 std::optional<std::vector<MenuPrompt>> CurrentMenuPrompts();
+// a prompt string's language hash to its icon's name, "" for one not known (prompt_icons.cpp)
+const char* PromptIcon(uint32_t hash);
 }  // namespace touch
 
 // ImGui's frame (ui.cpp): no input, the FPS counter alone draws in it

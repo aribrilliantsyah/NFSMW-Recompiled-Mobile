@@ -12,11 +12,13 @@ uint32_t FeInputPackage();  // game thread: the package taking the pad now, as F
 bool FeMouseDown();         // game thread: FEng's mouse button down this update
 bool FeFinger(float& x, float& y);  // any thread: the finger in FEng's screen, true while it is down
 // the menu's button prompts lately, for A, B, X, Y and the triggers (L and R, the showcase's zoom): shown, and its
-// label in capitals ("DEFAULTS"); and whether it prompts the right stick (the showcase's ROTATE, the map's cursor)
+// label in capitals ("DEFAULTS") with the string's language hash (FEString::LabelHash, the same in every language;
+// 0 when the string has none); and whether it prompts the right stick (the showcase's ROTATE, the map's cursor)
 constexpr int kFePromptLT = 4, kFePromptRT = 5, kFePromptCount = 6;
 struct FePrompts {
     bool shown[kFePromptCount] = {};
     std::string label[kFePromptCount];
+    uint32_t hash[kFePromptCount] = {};
     bool right_stick = false;
 };
 FePrompts CurrentFePrompts();  // any thread

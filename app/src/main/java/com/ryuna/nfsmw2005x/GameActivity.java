@@ -35,8 +35,9 @@ import org.libsdl.app.SDLControllerManager;
 public class GameActivity extends SDLActivity {
     static native void nativeSetPad(int buttons, int face, int lt, int rt, int lx, int ly);
     static native void nativeSetPadRight(int rx, int ry);
-    /** The game menu's button prompts as { label, pad, label, pad, ... }, pad one of A B X Y LT RT; null with no
-     *  menu up (native/activity.cpp). */
+    /** The game menu's button prompts as { icon, pad, label, ... }: icon a ButtonArt.Icon name chosen by the string's
+     *  hash ("" when unknown), pad one of A B X Y LT RT, label the game's text; null with no menu up
+     *  (native/activity.cpp). */
     static native String[] nativeMenuPrompts();
     /** The overlay's ☰: the game's settings, -1 their categories, else one; in a race it pauses first
      *  (src/game/settings_menu.cpp). */

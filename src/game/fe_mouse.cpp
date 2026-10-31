@@ -126,7 +126,9 @@ void GetMouseInfo(X86Context& ctx, uint8_t*) {
 // The menu's button prompts (the bar of "A Accept", "B Back", "Y Defaults"): in its package an image with the pad
 // button's icon and the string after it in its group, the label; hidden ones, or ones in a hidden group, are not up
 constexpr uint32_t kPackageObjects = 0x4C;
-constexpr uint32_t kObjectNext = 0x4, kObjectType = 0x18, kObjectHidden = 1, kImageTexture = 0x24, kStringText = 0x64;
+// FEString: its language hash at +0x60 (after FEObject's 0x5C bytes and the label's name), its text at +0x64
+constexpr uint32_t kObjectNext = 0x4, kObjectType = 0x18, kObjectHidden = 1, kImageTexture = 0x24, kStringHash = 0x60,
+                   kStringText = 0x64;
 constexpr uint32_t kGroupCount = 0x60, kGroupObjects = 0x64;
 constexpr uint32_t kTypeImage = 1, kTypeString = 2, kTypeGroup = 5;
 // the prompts' textures, named for the PS2's buttons: A CROSS, B TRIANGLE, X SQUARE, Y CIRCLE, the triggers L1 and R1;
@@ -217,11 +219,21 @@ std::string Label(uint32_t text) {
     return out;
 }
 
+// A prompt's label is the string after its icon in its group; with none after it, the string just ahead of the icon
+// that no icon took (custom race mode select's X, its "View Tutorial" listed before the icon)
 void ScanPrompts(uint32_t first, int count, FePrompts& out, int& budget) {
-    int pending = -1;  // an icon waiting for its label
+    int pending = -1;                     // an icon waiting for its label
+    uint32_t loose = 0;                   // the object before, when it is a string no icon took
+    uint32_t ahead[kFePromptCount] = {};  // each icon's loose string
+    auto take = [&](int i, uint32_t s) {
+        if (!out.label[i].empty()) return;
+        out.label[i] = Label(Peek(s + kStringText));
+        out.hash[i] = Peek(s + kStringHash);
+    };
     for (uint32_t o = first; o && budget-- > 0 && count != 0; o = Peek(o + kObjectNext), count--) {
         if (Peek(o + kObjectFlags) & kObjectHidden) continue;
-        uint32_t type = Peek(o + kObjectType);
+        uint32_t type = Peek(o + kObjectType), before = loose;
+        loose = 0;
         if (type == kTypeGroup) {
             ScanPrompts(Peek(o + kGroupObjects), int(Peek(o + kGroupCount)), out, budget);
         } else if (type == kTypeImage) {
@@ -234,12 +246,16 @@ void ScanPrompts(uint32_t first, int count, FePrompts& out, int& budget) {
                 if (texture == kPromptTextures[i]) {
                     out.shown[i] = true;
                     pending = i;
+                    if (!ahead[i]) ahead[i] = before;
                 }
-        } else if (type == kTypeString && pending >= 0) {
-            if (out.label[pending].empty()) out.label[pending] = Label(Peek(o + kStringText));
+        } else if (type == kTypeString) {
+            if (pending >= 0) take(pending, o);
+            else loose = o;
             pending = -1;
         }
     }
+    for (int i = 0; i < kFePromptCount; i++)
+        if (ahead[i]) take(i, ahead[i]);
 }
 
 std::mutex g_prompts_lock;
