@@ -267,6 +267,7 @@ static void Merge(toml::table& into, const toml::table& from) {
 // does), and left alone if it cannot be
 void Save() {
     game::SettingsLock lock(File());
+    if (!lock.ok()) return;  // another editor may be writing: no write over it
     toml::table t;
     std::error_code ec;
     // a file we cannot even look at may still be there: not a missing file to write fresh

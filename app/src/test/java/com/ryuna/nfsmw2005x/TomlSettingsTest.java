@@ -227,8 +227,8 @@ public class TomlSettingsTest {
         assertTrue(new File(tmp.getRoot(), "mostwanted.toml.lock").exists());
     }
 
-    /** The game's lock (native: fcntl F_SETLKW on the same .lock file, here python's lockf in another process) holds
-     *  an update off until it goes: the two lock kinds are one. */
+    /** The game's lock (native: an open file description lock, F_OFD_SETLKW, on the same .lock file; here taken the
+     *  same way by python in another process) holds an update off until it goes: the two lock kinds conflict. */
     @Test
     public void updateWaitsForTheNativeLock() throws Exception {
         File f = new File(tmp.getRoot(), "mostwanted.toml");
@@ -236,7 +236,8 @@ public class TomlSettingsTest {
         Process holder;
         try {
             holder = new ProcessBuilder("python3", "-c",
-                    "import fcntl,sys,time\nf=open(sys.argv[1],'a')\nfcntl.lockf(f,fcntl.LOCK_EX)\n"
+                    "import fcntl,struct,sys,time\nf=open(sys.argv[1],'a')\n"
+                    + "fcntl.fcntl(f,getattr(fcntl,'F_OFD_SETLKW',38),struct.pack('hhqqi4x',fcntl.F_WRLCK,0,0,0,0))\n"
                     + "print('held',flush=True)\ntime.sleep(1)", lock.getPath()).start();
         } catch (java.io.IOException e) {
             org.junit.Assume.assumeNoException(e);  // no python3 here

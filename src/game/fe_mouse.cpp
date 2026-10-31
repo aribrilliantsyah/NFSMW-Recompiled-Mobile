@@ -307,6 +307,13 @@ void FeFrame() {
 
 bool FeMenuShown() { return g_menu; }
 uint32_t FeMenuPackage() { return g_package; }
+uint32_t FeInputPackage() {
+    uint32_t fe = FEngine();
+    int n = 0;
+    for (uint32_t p = fe ? Peek(fe + kFirstPackage) : 0; p && n < kMaxPackages; p = Peek(p + kNext), n++)
+        if (kernel::G<uint8_t>(p + kInputEnabled) && (Peek(p + kControlMask) & 1)) return p;
+    return 0;
+}
 bool FeMouseDown() { return g_reported_down; }
 bool FeFinger(float& x, float& y) {
     x = float(g_x), y = float(g_y);

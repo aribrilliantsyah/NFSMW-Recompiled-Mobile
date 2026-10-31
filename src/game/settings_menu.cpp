@@ -627,16 +627,18 @@ bool Scroll(X86Context& ctx, uint32_t screen, int step) {
 // MainMenu_Sub.fng (0x1169B0). A category opens its options screen at once, as Accept on its icon does (0x104D40).
 // The request is a mailbox with a generation: taps while one is in hand only update its category, one handshake sends
 // START once, and only the generation opened is consumed
-constexpr uint64_t kRequestMs = 6000;  // a request the game never got to (a cutscene, a loading screen) is dropped
+// a request the game never got to (a cutscene, a loading screen) is dropped this long after the game thread saw it
+constexpr uint64_t kRequestMs = 6000;
 constexpr uint32_t kPauseMainFng = 0x3D0618, kMainMenuSubFng = 0x3D5DDC;
 constexpr uint32_t kFlags = 0x12C, kFlagOptions = 0x10;
 // the mailbox: generation << 32 | category + 1 (0 the list); generation 0 none yet
 std::atomic<uint64_t> g_mail{0};
-std::atomic<uint64_t> g_mail_at{0};
 std::atomic<bool> g_want_start{false};  // the game thread asks touch.cpp for START
 // game thread
 uint32_t g_done_gen = 0;        // the last generation opened or dropped
 uint32_t g_handshake_gen = 0;   // the generation whose START went (0 none): one START a handshake
+uint32_t g_seen_gen = 0;        // the generation the timeout runs for, from g_seen_at
+uint64_t g_seen_at = 0;
 bool g_open = false;            // a SETTINGS session (its list or a category screen of ours) is up
 bool g_flag_ours = false;       // OpenRequested set the FEDatabase options flag, not a game's OPTIONS
 
@@ -664,10 +666,13 @@ void LeaveSettings() {
     g_flag_ours = false;
 }
 
-// the pause menu the race's START brings up, the ordinary one (not the options' UIOptionsMain in the same package)
+// the pause menu the race's START brings up is the package taking the pad now (FEng's package list after its update,
+// not the menu the last present saw), and the ordinary one: Pause_Main.fng with the options flag clear, of which its
+// factory builds the pause menu (with the flag, the options' UIOptionsMain in the same package)
+bool PauseMenu(uint32_t package) { return package && NameIs(Peek(package + 0xC), kPauseMainFng); }
 bool OrdinaryPause(uint32_t package) {
     uint32_t db = R32(kFEDatabase);
-    return package && NameIs(Peek(package + 0xC), kPauseMainFng) && db && !(R32(db + kFlags) & kFlagOptions);
+    return PauseMenu(package) && db && !(R32(db + kFlags) & kFlagOptions);
 }
 
 bool OpenRequested(X86Context& ctx, int category) {
@@ -698,7 +703,6 @@ void RequestOpenSettings(int category) {
     uint64_t next;
     do next = ((mail >> 32) + 1) << 32 | uint32_t(category < 0 ? 0 : category + 1);
     while (!g_mail.compare_exchange_weak(mail, next));
-    g_mail_at = NowMs();
 }
 
 bool SettingsTakePause() { return g_want_start.exchange(false); }
@@ -714,14 +718,15 @@ void SettingsTick(X86Context& ctx) {
         g_handshake_gen = 0;
         g_want_start = false;
     };
-    if (NowMs() - g_mail_at > kRequestMs) return drop();
+    if (g_seen_gen != gen) g_seen_gen = gen, g_seen_at = NowMs();  // a new generation's timeout starts as it is seen
+    if (NowMs() - g_seen_at > kRequestMs) return drop();
     if (g_open) return drop();  // already in SETTINGS
-    uint32_t package = FeMenuPackage();
+    uint32_t package = FeInputPackage();
     if (Racing()) {
         if (!OrdinaryPause(package)) {
-            // no menu: START once a handshake (taps meanwhile are the same handshake); another menu (a pursuit's
-            // result, a dialog): wait for it to go
-            if (!package && !g_handshake_gen) {
+            // no menu up: START once a handshake (taps meanwhile are the same handshake); another menu (a pursuit's
+            // result, a dialog, the pause menu's own options): wait for it to go
+            if (!PauseMenu(package) && !FeMenuShown() && !g_handshake_gen) {
                 g_handshake_gen = gen;
                 g_want_start = true;
             }

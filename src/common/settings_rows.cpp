@@ -128,37 +128,44 @@ const char* const kFpsPositionNames[] = {"TOP CENTER", "TOP LEFT", "TOP RIGHT", 
 
 // ---- presets ----
 
-// A preset is the whole state of the rows it covers: render resolution, the FPS cap and every VISUALS row. The rows as
-// they are match one exactly, or the preset shows Custom (a row changed by hand, here or in the launcher)
+// A preset is the whole state of the rows it covers: render resolution, every SPEED row and every VISUALS row. The rows
+// as they are match one exactly, or the preset shows Custom (a row changed by hand, here or in the launcher)
 enum Preset { kSaver, kBalanced, kMax, kCustom };
 constexpr int kPresetCount = 3;
 
 struct PresetState {
     uint32_t render_percent, fps_cap;
+    bool vsync, fps_counter;
+    uint32_t fps_position;
+    bool fps_usage, fps_temps, shader_preload;
     bool bloom, fog, motion_blur;
     uint32_t reflections;  // the cars': 0 every frame, 1 every 2nd, 3 off
     bool road_reflections, shadows, particles, rain, rain_drops;
     uint32_t anti_aliasing, aniso;
 };
 constexpr PresetState kPresets[kPresetCount] = {
-    // Saver: half the resolution, 30 fps, no reflections, motion blur or particles
-    {50, 30, true, true, false, 3, false, true, false, true, true, game::kAaOff, 0},
-    // Balanced: two thirds, 60 fps, the cars' reflections every 2nd frame
-    {67, 60, true, true, true, 1, true, true, true, true, true, game::kAaOff, 0},
-    // Max: the full resolution, no cap, everything on
-    {100, 0, true, true, true, 0, true, true, true, true, true, game::kAaSsaa, 16},
+    // each: no FPS counter (its rows as they come), shaders preloaded (no stutter on a new one)
+    // Saver: half the resolution, 30 fps, no V-Sync, no reflections, motion blur or particles
+    {50, 30, false, false, 0, true, true, true, true, true, false, 3, false, true, false, true, true, game::kAaOff, 0},
+    // Balanced: two thirds, 60 fps, no V-Sync, the cars' reflections every 2nd frame
+    {67, 60, false, false, 0, true, true, true, true, true, true, 1, true, true, true, true, true, game::kAaOff, 0},
+    // Max: the full resolution, no cap, V-Sync, everything on
+    {100, 0, true, false, 0, true, true, true, true, true, true, 0, true, true, true, true, true, game::kAaSsaa, 16},
 };
 const char* const kPresetNames[] = {"SAVER", "BALANCED", "MAX", "CUSTOM"};
 
 PresetState Current() {
     const game::Options& o = game::Opt();
     const app::Settings& s = app::Get();
-    return {s.render_percent, s.fps_cap, o.bloom, o.fog, o.motion_blur, o.reflections, o.road_reflections, o.shadows,
+    return {s.render_percent, s.fps_cap, s.vsync, o.fps_counter, o.fps_position, o.fps_usage, o.fps_temps,
+            o.shader_preload, o.bloom, o.fog, o.motion_blur, o.reflections, o.road_reflections, o.shadows,
             o.particles, o.rain, o.rain_drops, o.anti_aliasing, s.aniso};
 }
 
 bool Same(const PresetState& a, const PresetState& b) {
-    return a.render_percent == b.render_percent && a.fps_cap == b.fps_cap && a.bloom == b.bloom && a.fog == b.fog &&
+    return a.render_percent == b.render_percent && a.fps_cap == b.fps_cap && a.vsync == b.vsync &&
+           a.fps_counter == b.fps_counter && a.fps_position == b.fps_position && a.fps_usage == b.fps_usage &&
+           a.fps_temps == b.fps_temps && a.shader_preload == b.shader_preload && a.bloom == b.bloom && a.fog == b.fog &&
            a.motion_blur == b.motion_blur && a.reflections == b.reflections &&
            a.road_reflections == b.road_reflections && a.shadows == b.shadows && a.particles == b.particles &&
            a.rain == b.rain && a.rain_drops == b.rain_drops && a.anti_aliasing == b.anti_aliasing && a.aniso == b.aniso;
@@ -176,7 +183,9 @@ void ApplyPreset(Preset p) {
     const PresetState& d = kPresets[p];
     game::Options& o = game::Opt();
     app::Settings& s = app::Get();
-    s.render_percent = d.render_percent, s.fps_cap = d.fps_cap, s.aniso = d.aniso;
+    s.render_percent = d.render_percent, s.fps_cap = d.fps_cap, s.vsync = d.vsync, s.aniso = d.aniso;
+    o.fps_counter = d.fps_counter, o.fps_position = d.fps_position, o.fps_usage = d.fps_usage;
+    o.fps_temps = d.fps_temps, o.shader_preload = d.shader_preload;
     o.bloom = d.bloom, o.fog = d.fog, o.motion_blur = d.motion_blur, o.reflections = d.reflections;
     o.road_reflections = d.road_reflections, o.shadows = d.shadows, o.particles = d.particles;
     o.rain = d.rain, o.rain_drops = d.rain_drops, o.anti_aliasing = d.anti_aliasing;
@@ -262,6 +271,7 @@ void LoadControlState() {
 void SaveControlKey(const char* key, int value) {
     auto path = SettingsFile();
     game::SettingsLock lock(path);
+    if (!lock.ok()) return;
     toml::table t;
     try {
         t = toml::parse_file(path.string());

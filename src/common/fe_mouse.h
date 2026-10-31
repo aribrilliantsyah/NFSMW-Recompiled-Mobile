@@ -7,7 +7,8 @@ namespace game {
 
 void FeFrame();             // game thread, at each present
 bool FeMenuShown();         // any thread: a menu that takes the pointer is up
-uint32_t FeMenuPackage();   // any thread: that menu's package, 0 for none
+uint32_t FeMenuPackage();   // any thread: that menu's package, 0 for none (as the last present saw it)
+uint32_t FeInputPackage();  // game thread: the package taking the pad now, as FEng's own walk has it; 0 for none
 bool FeMouseDown();         // game thread: FEng's mouse button down this update
 bool FeFinger(float& x, float& y);  // any thread: the finger in FEng's screen, true while it is down
 // the menu's button prompts lately, for A, B, X, Y and the triggers (L and R, the showcase's zoom): shown, and its
