@@ -26,7 +26,7 @@ final class ButtonArt {
         ZOOM_IN, ZOOM_OUT, ACCEPT, RESTART, STATS, EXIT, CANCEL,
         // the menu prompts' actions (native/prompt_icons.cpp's keys)
         EYE, EYE_OFF, INFO, HELP, DELETE, EDIT, CART, CASH, MAP, OPTIONS, PLAY, LIST, ROTATE, FORWARD, SEND, SORT,
-        FILTER, SAVE, CHAT, PERSON }
+        FILTER, SAVE, CHAT, PERSON, PREV, NEXT }
 
     // the pad's colours: A B X Y, grey for the pedals, shoulders and system buttons, White's white
     static final int COLOR_A = 0xFF3FB950, COLOR_B = 0xFFE5534B, COLOR_X = 0xFF4493F8, COLOR_Y = 0xFFE3B341,
@@ -84,6 +84,9 @@ final class ButtonArt {
             case SAVE: return "<path d=\"M5 4h11l3 3v13H5z\"/><path d=\"M8 4v5h7V4M8 20v-6h8v6\"/>";
             case CHAT: return "<path d=\"M4.5 5.5h15v10h-8L7 19v-3.5H4.5z\"/>";
             case PERSON: return "<circle cx=\"12\" cy=\"8\" r=\"3.5\"/><path d=\"M5 20c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5\"/>";
+            // the triggers' previous / next (a region, a page, a list's tab): a bar and the chevron towards it
+            case PREV: return "<path d=\"M6 5v14\"/><path d=\"M17.5 5.5L11 12l6.5 6.5\"/>";
+            case NEXT: return "<path d=\"M18 5v14\"/><path d=\"M6.5 5.5L13 12l-6.5 6.5\"/>";
         }
         throw new IllegalArgumentException(String.valueOf(i));
     }

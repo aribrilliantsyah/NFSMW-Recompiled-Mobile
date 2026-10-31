@@ -712,7 +712,7 @@ public final class TouchControllerView extends View {
             b.r = r;
             if (pad >= 4) {
                 // ZOOM OUT / ZOOM IN where they zoom (the showcase, the map); unnamed (track select's region
-                // switch), the trigger's letters
+                // switch), previous / next
                 b.cx = margin + r;
                 b.cy = lowest - (pad == 4 ? pitch : 0);
                 out.add(b);

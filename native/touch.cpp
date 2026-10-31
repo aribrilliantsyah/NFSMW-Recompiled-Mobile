@@ -430,13 +430,15 @@ std::optional<std::vector<MenuPrompt>> CurrentMenuPrompts() {
     game::FePrompts p = game::CurrentFePrompts();
     std::vector<MenuPrompt> out;
     // the prompt's index is its pad button: A B X Y LT RT; one with no label after its art is still prompted (Quick
-    // Play's A, track select's L and R): the overlay draws its letter
+    // Play's A, track select's L and R): A to Y draw their letter, the triggers step a list (track select's region,
+    // a page) and get previous / next
     for (int i = 0; i < game::kFePromptCount; i++) {
         if (!p.shown[i]) continue;
         bool trigger = i == game::kFePromptLT || i == game::kFePromptRT;
         std::string label = trigger ? TriggerLabel(p, i) : p.label[i];
         // the triggers given way to the zoom have its icon whatever their string was (the map's "ZOOM 1.5X")
         std::string icon = label == "ZOOM OUT" ? "ZOOM_OUT" : label == "ZOOM IN" ? "ZOOM_IN" : PromptIcon(p.hash[i]);
+        if (trigger && icon.empty()) icon = i == game::kFePromptLT ? "PREV" : "NEXT";
         out.push_back({std::move(icon), std::move(label), i});
     }
     return out;

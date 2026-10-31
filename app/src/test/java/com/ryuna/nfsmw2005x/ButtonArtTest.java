@@ -8,10 +8,11 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public class ButtonArtTest {
-    /** native/prompt_icons.cpp's keys: every one an Icon (a key the overlay cannot draw would fall to the letter). */
+    /** native's keys (native/prompt_icons.cpp, and touch.cpp's PREV / NEXT for unnamed triggers): every one an Icon
+     *  (a key the overlay cannot draw would fall to the letter). */
     private static final String[] NATIVE_KEYS = {"ACCEPT", "BACK", "CANCEL", "EXIT", "RESTART", "STATS", "EYE",
         "EYE_OFF", "INFO", "HELP", "DELETE", "EDIT", "CART", "CASH", "MAP", "CAMERA", "OPTIONS", "PLAY", "LIST",
-        "ZOOM_IN", "ZOOM_OUT", "ROTATE", "FORWARD", "SEND", "SORT", "FILTER", "SAVE", "CHAT", "PERSON"};
+        "ZOOM_IN", "ZOOM_OUT", "ROTATE", "FORWARD", "SEND", "SORT", "FILTER", "SAVE", "CHAT", "PERSON", "PREV", "NEXT"};
 
     @Test
     public void iconForKeyMapsEveryNativeKey() {
