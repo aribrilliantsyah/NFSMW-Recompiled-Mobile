@@ -32,6 +32,17 @@ public class ButtonArtTest {
     }
 
     @Test
+    public void pressedFillIsHalfAgainAsOpaque() {
+        // the fill is rgba(12,13,16,.55): alpha 140
+        assertEquals(98, ButtonArt.bodyAlpha(false, .7f));
+        assertEquals(147, ButtonArt.bodyAlpha(true, .7f));
+        assertEquals(140, ButtonArt.bodyAlpha(false, 1f));
+        assertEquals(210, ButtonArt.bodyAlpha(true, 1f));
+        assertEquals(255, ButtonArt.scaledAlpha(0xFFFFFFFF, 1.5f));
+        assertEquals(0, ButtonArt.scaledAlpha(0xFFFFFFFF, -1f));
+    }
+
+    @Test
     public void everyIconHasPathData() {
         for (ButtonArt.Icon i : ButtonArt.Icon.values()) {
             String svg = ButtonArt.iconSvg(i);

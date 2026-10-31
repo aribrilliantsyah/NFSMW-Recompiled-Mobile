@@ -480,9 +480,13 @@ final class ButtonArt {
         }
     }
 
+    /** color's own alpha times a (a may pass 1: a pressed fill), the product clamped to 0..255. */
+    static int scaledAlpha(int color, float a) {
+        return Math.max(0, Math.min(255, Math.round(((color >>> 24) & 0xFF) * a)));
+    }
+
     private static int alpha(int color, float a) {
-        int al = Math.round(((color >>> 24) & 0xFF) * Math.max(0f, Math.min(1f, a)));
-        return (al << 24) | (color & 0xFFFFFF);
+        return (scaledAlpha(color, a) << 24) | (color & 0xFFFFFF);
     }
 
     /** The icons and badge letters stay a little clearer than the frames at low opacity. */
@@ -499,9 +503,13 @@ final class ButtonArt {
         P.fill.setColor(color);
     }
 
-    /** The control's fill: pressed half as opaque again. */
+    /** The control's fill alpha: pressed half as opaque again, past the opacity setting if need be. */
+    static int bodyAlpha(boolean pressed, float opacity) {
+        return scaledAlpha(FILL, (pressed ? 1.5f : 1f) * opacity);
+    }
+
     private static int body(boolean pressed, float opacity) {
-        return alpha(FILL, (pressed ? 1.5f : 1f) * opacity);
+        return (bodyAlpha(pressed, opacity) << 24) | (FILL & 0xFFFFFF);
     }
 
     /** icon, size px square, centred on (cx, cy), lines baseWidth grid units wide. */
