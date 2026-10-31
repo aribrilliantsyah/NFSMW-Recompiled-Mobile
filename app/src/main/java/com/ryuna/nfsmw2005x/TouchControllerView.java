@@ -62,6 +62,8 @@ public final class TouchControllerView extends View {
     private static final String[] MODE_NAMES = {"XBOX", "MOBILE"};      // Settings.MODE_XBOX, MODE_MOBILE
     private static final long TOGGLE_MS = 4000;
     private static final float STEP = .1f, SCALE_MIN = .5f, SCALE_MAX = 2.2f, OPA_MIN = .15f;
+    /** A hidden control in the editor: this much of the mode's opacity. */
+    private static final float GHOST = .3f;
     /** The wheel's lock each way, degrees of turning it: full lock on the left stick. */
     private static final float WHEEL_LOCK = 120f;
     /** How long a tap on a menu prompt, or a stick's or the gear lever's click, holds its pad button. */
@@ -69,7 +71,7 @@ public final class TouchControllerView extends View {
     /** A touch on a stick or the gear lever shorter than this, not moved, is its click. */
     private static final long CLICK_MS = 250;
 
-    private static final String HELP = "Drag to move · SIZE: selected or all";
+    private static final String HELP = "Drag to move · SIZE: selected or all · HIDE: selected";
     private static final int ACCENT = Color.rgb(0x6F, 0x74, 0x32);
     private static final int UI_BG = Color.argb(190, 16, 17, 20);
 
@@ -93,6 +95,7 @@ public final class TouchControllerView extends View {
         final float[] fx = new float[MODES], fy = new float[MODES], fs = new float[MODES];
         final float[] px = new float[MODES], py = new float[MODES], ps = new float[MODES];
         final boolean[] own = new boolean[MODES];
+        final boolean[] hidden = new boolean[MODES];  // hidden by the player in the editor, per mode
         float cx, cy, scale = 1f;
         boolean down;
         float kx, ky;                       // stick or gear knob offset, -1..1
@@ -116,7 +119,10 @@ public final class TouchControllerView extends View {
             return this;
         }
 
-        boolean shown() { return (visibleIn & (1 << mode)) != 0; }
+        /** One of the mode's controls, hidden or not (the editor shows the hidden ones faint, to bring back). */
+        boolean inMode() { return (visibleIn & (1 << mode)) != 0; }
+        /** In the mode and not hidden: drawn and touchable in the game. */
+        boolean shown() { return inMode() && !hidden[mode]; }
         float w() { return baseW * unit * scale * size[mode]; }
         float h() { return baseH * unit * scale * size[mode]; }
         boolean radial() {
@@ -181,6 +187,11 @@ public final class TouchControllerView extends View {
     // the mode's opacity and size (a factor over each control's own scale): mostwanted.toml's, the one store the
     // launcher's process and the game's both read fresh (SharedPreferences are cached per process)
     private final float[] opacity = new float[MODES], size = new float[MODES];
+    // the editor's opacity edits per mode since it opened (Settings.replayOpacity: +1/-1 a step, 0 RESET), replayed on
+    // the file's value at DONE so a mode not touched keeps what another editor wrote meanwhile
+    @SuppressWarnings("unchecked")
+    private final List<Integer>[] opacityEdits = new List[] {new ArrayList<Integer>(), new ArrayList<Integer>()};
+    private int modeAtOpen;                 // the mode as the editor opened: DONE writes pad_mode only if it changed
     private boolean controlsVisible = true;
     private boolean physicalPad;
     private final boolean autoHide, haptic;
@@ -222,7 +233,8 @@ public final class TouchControllerView extends View {
     private int editPointer = -1;
     private float grabX, grabY;
     private final RectF sizeMinus = new RectF(), sizePlus = new RectF(), opaMinus = new RectF(),
-            opaPlus = new RectF(), modeEdit = new RectF(), reset = new RectF(), cancel = new RectF(),
+            opaPlus = new RectF(), modeEdit = new RectF(), hideEdit = new RectF(), reset = new RectF(),
+            cancel = new RectF(),
             done = new RectF(), helpBg = new RectF();
     private float sizeTextX, opaTextX;
 
@@ -287,13 +299,15 @@ public final class TouchControllerView extends View {
         // the defaults change, start again from the new ones
         if (touchPrefs.getInt("layout_version", 0) != LAYOUT_VERSION)
             touchPrefs.edit().clear().putInt("layout_version", LAYOUT_VERSION).apply();
-        mode = Settings.padMode(c);
-        steer = Settings.steer(c);
+        TomlSettings t = Settings.nativeSettings(c);
+        mode = Settings.padMode(t);
+        modeAtOpen = mode;
+        steer = Settings.steer(t);
         autoHide = prefs.getBoolean(Settings.K_PAD_AUTOHIDE, true);
         haptic = prefs.getBoolean(Settings.K_HAPTIC, true);
         controlsVisible = !inGame || prefs.getBoolean(Settings.K_PAD, true);
-        loadLook(c);
-        fullLockSin = (float) Math.sin(Math.toRadians(Settings.tiltAngle(Settings.tiltSens(c))));
+        loadLook(t);
+        fullLockSin = (float) Math.sin(Math.toRadians(Settings.tiltAngle(Settings.tiltSens(t))));
         sensors = (SensorManager) c.getSystemService(Context.SENSOR_SERVICE);
         Sensor g = sensors == null ? null : sensors.getDefaultSensor(Sensor.TYPE_GRAVITY);
         accelOnly = g == null && sensors != null;
@@ -337,11 +351,28 @@ public final class TouchControllerView extends View {
         super.onDetachedFromWindow();
     }
 
-    /** GameActivity: pause/resume the tilt sensor with the activity. */
+    /** GameActivity: pause/resume the tilt sensor with the activity; back in front, the shared keys again, which the
+     *  launcher may have changed meanwhile. */
     void onPauseResume(boolean resumed) {
         if (!resumed) { stopTilt(); return; }
-        loadLook(getContext());     // the launcher may have changed them meanwhile
+        if (!editing) reloadShared(Settings.nativeSettings(getContext()));
         invalidate();
+        updateTilt();
+    }
+
+    /** mostwanted.toml's mode, steering, tilt sensitivity, opacity and size as t has them (the file as it is now): the
+     *  one place the overlay takes them after its start, so what it shows and steps from is never an older copy. */
+    private void reloadShared(TomlSettings t) {
+        loadLook(t);
+        fullLockSin = (float) Math.sin(Math.toRadians(Settings.tiltAngle(Settings.tiltSens(t))));
+        int m = Settings.padMode(t), s = Settings.steer(t);
+        if (m == mode && s == steer) return;
+        releaseAll();
+        boolean rebuild = s != steer;
+        mode = m;
+        steer = s;
+        if (rebuild && width > 0) build(); else useMode(mode);
+        if (inGame) pollMenu();
         updateTilt();
     }
 
@@ -457,6 +488,7 @@ public final class TouchControllerView extends View {
     private void load(Control c) {
         for (int m = 0; m < MODES; m++) {
             String k = "m" + m + "_" + c.id;
+            c.hidden[m] = touchPrefs.getBoolean(k + "_hidden", false);
             if (!touchPrefs.contains(k + "_x")) continue;
             c.px[m] = touchPrefs.getFloat(k + "_x", 0f);
             c.py[m] = touchPrefs.getFloat(k + "_y", 0f);
@@ -488,7 +520,7 @@ public final class TouchControllerView extends View {
         modeBtn.set(gearBtn.right + gap, top, gearBtn.right + gap + mw, top + h);
         menuBtn.set(modeBtn.right + gap, top, modeBtn.right + gap + h, top + h);
 
-        // editor bar: [-] SIZE [+]   [-] OPACITY [+]  /  [MODE] [RESET] [CANCEL] [DONE]
+        // editor bar: [-] SIZE [+]   [-] OPACITY [+]  /  [MODE] [HIDE] [RESET] [CANCEL] [DONE]
         text.setTextSize(dp(12));
         float side = Math.max(dp(34), unit * .6f);
         gap = dp(10);
@@ -503,11 +535,13 @@ public final class TouchControllerView extends View {
         opaTextX = x + ow * .5f; x += ow + gap;
         opaPlus.set(x, y, x + side, y + side);
         float mw2 = text.measureText("LAYOUT: MOBILE") + dp(24);
+        float hw2 = text.measureText("SHOW") + dp(26);
         float rw = text.measureText("RESET") + dp(26), cw = text.measureText("CANCEL") + dp(26),
               dw = text.measureText("DONE") + dp(26);
-        row = mw2 + rw + cw + dw + gap * 3;
+        row = mw2 + hw2 + rw + cw + dw + gap * 4;
         x = width * .5f - row * .5f; y += side + gap;
         modeEdit.set(x, y, x + mw2, y + side); x += mw2 + gap;
+        hideEdit.set(x, y, x + hw2, y + side); x += hw2 + gap;
         reset.set(x, y, x + rw, y + side); x += rw + gap;
         cancel.set(x, y, x + cw, y + side); x += cw + gap;
         done.set(x, y, x + dw, y + side);
@@ -524,7 +558,9 @@ public final class TouchControllerView extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         if (editing) {
-            for (Control c : controls) if (c.shown()) drawControl(canvas, c);
+            // a hidden control faint, so it can be picked and shown again
+            for (Control c : controls)
+                if (c.inMode()) drawControl(canvas, c, c.hidden[mode] ? opacity[mode] * GHOST : opacity[mode]);
             if (picked != null) {
                 float rr = (picked.radial() ? picked.reach() : Math.max(picked.w(), picked.h()) * .5f) + dp(6);
                 canvas.drawRect(picked.cx - rr, picked.cy - rr, picked.cx + rr, picked.cy + rr, frame);
@@ -533,7 +569,7 @@ public final class TouchControllerView extends View {
             return;
         }
         if (padShown()) {
-            for (Control c : controls) if (visible(c)) drawControl(canvas, c);
+            for (Control c : controls) if (visible(c)) drawControl(canvas, c, opacity[mode]);
             if (prompts != null) for (Prompt p : prompts) drawPrompt(canvas, p);
         }
         if (toggleVisible) {
@@ -544,8 +580,7 @@ public final class TouchControllerView extends View {
         }
     }
 
-    private void drawControl(Canvas canvas, Control c) {
-        float op = opacity[mode];
+    private void drawControl(Canvas canvas, Control c, float op) {
         switch (c.kind) {
             case K_STICK: {
                 float rad = c.w();
@@ -616,6 +651,13 @@ public final class TouchControllerView extends View {
         pill(canvas, st, sizeTextX, sizeMinus.centerY());
         pill(canvas, "OPACITY " + Math.round(opacity[mode] * 100) + " %", opaTextX, opaMinus.centerY());
         uiButton(canvas, modeEdit, "LAYOUT: " + MODE_NAMES[mode], dp(12));
+        // HIDE the selected control, SHOW one hidden (drawn faint); nothing selected, greyed
+        boolean hid = picked != null && picked.hidden[mode];
+        uiButton(canvas, hideEdit, hid ? "SHOW" : "HIDE", dp(12));
+        if (picked == null) {
+            fill.setColor(UI_BG);
+            canvas.drawRoundRect(hideEdit, dp(7), dp(7), fill);
+        }
         uiButton(canvas, reset, "RESET", dp(12));
         uiButton(canvas, cancel, "CANCEL", dp(12));
         uiButton(canvas, done, "DONE", dp(12));
@@ -843,23 +885,15 @@ public final class TouchControllerView extends View {
         invalidate();
     }
 
+    /** The bar's mode button: the other mode than the file's now (mostwanted.toml's pad_mode, the game's own menu's
+     *  too), written under its lock; the overlay takes the file's keys as they then are. */
     private void switchMode() {
-        releaseAll();
-        mode = (mode + 1) % MODES;
-        saveMode();
-        useMode(mode);
-        pollMenu();
-        updateTilt();
-        send();
-    }
-
-    /** The layout's mode is mostwanted.toml's pad_mode, the game's own menu's too. */
-    private void saveMode() {
         try {
-            Settings.putNative(getContext(), Settings.K_PAD_MODE, mode);
+            reloadShared(Settings.updateNative(getContext(), Settings::nextPadMode));
         } catch (java.io.IOException e) {
             android.util.Log.w("nfsmw", "cannot save pad_mode: " + e.getMessage());
         }
+        send();
     }
 
     // -------------------------------------------------------------- to native
@@ -972,11 +1006,26 @@ public final class TouchControllerView extends View {
         releaseAll();
         removeCallbacks(hideToggle);
         toggleVisible = false;
+        if (inGame) reloadShared(Settings.nativeSettings(getContext()));  // the file's as the editor opens
+        startEdits();
         editing = true;
         picked = null;
         editPointer = -1;
         stopTilt();
         invalidate();
+    }
+
+    /** What DONE compares with: the mode as the editor opens, no opacity edits yet. */
+    private void startEdits() {
+        modeAtOpen = mode;
+        for (List<Integer> e : opacityEdits) e.clear();
+    }
+
+    /** An opacity edit of the mode (+1/-1 a step, 0 RESET): shown at once, replayed on the file's value at DONE. */
+    private void editOpacity(int edit) {
+        opacityEdits[mode].add(edit);
+        int pct = Math.round(opacity[mode] * 100);
+        opacity[mode] = (edit == 0 ? Settings.TOUCH_OPACITY_DEF : Settings.stepTouchOpacity(pct, edit)) / 100f;
     }
 
     private boolean editTouch(MotionEvent e) {
@@ -988,16 +1037,20 @@ public final class TouchControllerView extends View {
                 if (editPointer != -1) return true;
                 if (sizeMinus.contains(x, y)) resize(-STEP);
                 else if (sizePlus.contains(x, y)) resize(STEP);
-                else if (opaMinus.contains(x, y)) opacity[mode] = clamp(round1(opacity[mode] - STEP), OPA_MIN, 1f);
-                else if (opaPlus.contains(x, y)) opacity[mode] = clamp(round1(opacity[mode] + STEP), OPA_MIN, 1f);
+                else if (opaMinus.contains(x, y)) editOpacity(-1);
+                else if (opaPlus.contains(x, y)) editOpacity(1);
                 else if (modeEdit.contains(x, y)) {
-                    for (Control c : controls) if (c.shown()) c.keep(mode);
+                    for (Control c : controls) if (c.inMode()) c.keep(mode);
                     mode = (mode + 1) % MODES;
                     picked = null;
                     useMode(mode);
+                } else if (hideEdit.contains(x, y)) {
+                    // the selected control hidden in this mode, or a hidden one shown again; it stays selected
+                    if (picked != null) picked.hidden[mode] = !picked.hidden[mode];
                 } else if (reset.contains(x, y)) {
-                    for (Control c : controls) { c.own[mode] = false; c.use(mode); }
-                    opacity[mode] = Settings.TOUCH_OPACITY_DEF / 100f;
+                    // the mode's factory layout: places, sizes, every control shown, the default opacity
+                    for (Control c : controls) { c.own[mode] = false; c.hidden[mode] = false; c.use(mode); }
+                    editOpacity(0);
                     picked = null;
                 } else if (cancel.contains(x, y)) finishEditor(false);
                 else if (done.contains(x, y)) finishEditor(true);
@@ -1005,7 +1058,7 @@ public final class TouchControllerView extends View {
                     picked = null;
                     for (int i = controls.size() - 1; i >= 0; i--) {
                         Control c = controls.get(i);
-                        if (c.shown() && c.contains(x, y)) { picked = c; break; }
+                        if (c.inMode() && c.contains(x, y)) { picked = c; break; }
                     }
                     if (picked != null) {
                         editPointer = e.getPointerId(idx);
@@ -1040,7 +1093,7 @@ public final class TouchControllerView extends View {
             picked.keep(mode);
         } else {
             for (Control c : controls) {
-                if (!c.shown()) continue;
+                if (!c.inMode()) continue;
                 c.scale = clamp(round1(c.scale + step), SCALE_MIN, SCALE_MAX);
                 c.keep(mode);
             }
@@ -1049,10 +1102,9 @@ public final class TouchControllerView extends View {
 
     private void finishEditor(boolean save) {
         if (save) {
-            for (Control c : controls) if (c.shown()) c.keep(mode);
+            for (Control c : controls) if (c.inMode()) c.keep(mode);
             SharedPreferences.Editor ed = touchPrefs.edit();
             for (int m = 0; m < MODES; m++) {
-                ed.remove("m" + m + "_opacity");
                 for (Control c : controls) {
                     String k = "m" + m + "_" + c.id;
                     if (c.own[m]) {
@@ -1060,11 +1112,12 @@ public final class TouchControllerView extends View {
                     } else {
                         ed.remove(k + "_x").remove(k + "_y").remove(k + "_s");
                     }
+                    if (c.hidden[m]) ed.putBoolean(k + "_hidden", true); else ed.remove(k + "_hidden");
                 }
             }
+            saveEdits();
+            // the old opacity preferences are the file's defaults (loadLook) until saveEdits wrote the file's own
             ed.apply();
-            saveMode();
-            saveOpacity();
         }
         if (!inGame) {
             onEditorDone.run();
@@ -1073,12 +1126,44 @@ public final class TouchControllerView extends View {
         editing = false;
         picked = null;
         if (!save) {                          // back to what is saved
-            loadLook(getContext());
             for (Control c : controls) { java.util.Arrays.fill(c.own, false); load(c); }
+            mode = modeAtOpen;
+            reloadShared(Settings.nativeSettings(getContext()));
         }
+        releaseHiddenPointers();
         useMode(mode);
+        if (inGame) pollMenu();
         updateTilt();
         showToggle();
+    }
+
+    /** DONE's settings file part, in one locked change on the file as it is now: pad_mode only when the editor's mode
+     *  is not the one it opened in, and only the opacities of modes the editor changed (Settings.applyOpacityEdits),
+     *  so a value another editor wrote while this one was open stays. */
+    private void saveEdits() {
+        int[] legacy = new int[MODES];
+        for (int m = 0; m < MODES; m++)
+            legacy[m] = Math.round(touchPrefs.getFloat("m" + m + "_opacity", Settings.TOUCH_OPACITY_DEF / 100f) * 100);
+        boolean modeChanged = mode != modeAtOpen;
+        try {
+            TomlSettings t = Settings.updateNative(getContext(), f -> {
+                if (modeChanged) f.put(Settings.K_PAD_MODE, mode);
+                Settings.applyOpacityEdits(f, opacityEdits, legacy);
+            });
+            loadLook(t);
+        } catch (java.io.IOException e) {
+            android.util.Log.w("nfsmw", "cannot save the touch layout's mode or opacity: " + e.getMessage());
+        }
+        startEdits();
+    }
+
+    /** A control hidden while a finger held it lets go. */
+    private void releaseHiddenPointers() {
+        for (Control c : controls) {
+            if (c.pointer < 0 || c.shown()) continue;
+            pointers.remove(c.pointer);
+            release(c);
+        }
     }
 
     /** Back in the game while the in-game editor is open: cancel it. */
@@ -1092,48 +1177,40 @@ public final class TouchControllerView extends View {
     private static final String[] STEER_NAMES = {"STICK", "ARROWS", "TILT", "WHEEL"};
 
     /** The game's CONTROLS rows (src/common/settings_rows.cpp, GameActivity.settingsRow), UI thread: 0 mode,
-     *  1 steering, 2 tilt sensitivity, 3 opacity, 4 size (every control of the mode); step changes it and saves. */
+     *  1 steering, 2 tilt sensitivity, 3 opacity, 4 size (every control of the mode); step changes it and saves. Each
+     *  shows, and steps from, mostwanted.toml as it is now (the launcher's CONTROLS edit the same keys from its own
+     *  process): a step is made on the file under its lock, and the overlay takes the result. */
     String settingsRow(int row, int step) {
         Context c = getContext();
         try {
+            TomlSettings t;
+            if (step == 0) {
+                t = Settings.nativeSettings(c);
+            } else {
+                int legacy = Math.round(touchPrefs.getFloat("m" + mode + "_opacity",
+                        Settings.TOUCH_OPACITY_DEF / 100f) * 100);
+                final int m = mode;
+                t = Settings.updateNative(c, f -> {
+                    switch (row) {
+                        case 0: Settings.nextPadMode(f); break;
+                        case 1: Settings.stepSteer(f, step); break;
+                        case 2: Settings.stepTiltSens(f, step); break;
+                        case 3: case 4: Settings.stepTouchLook(f, m, row == 3, step, legacy); break;
+                        default: break;
+                    }
+                });
+            }
+            if (!editing) reloadShared(t);
+            invalidate();
             switch (row) {
-                case 0:
-                    if (step != 0) switchMode();
-                    return MODE_NAMES[mode];
-                case 1:
-                    if (step != 0) {
-                        steer = Math.floorMod(steer + step, STEER_NAMES.length);
-                        Settings.putNative(c, Settings.K_STEER, steer);
-                        releaseAll();
-                        build();
-                        updateTilt();
-                    }
-                    return STEER_NAMES[steer];
-                case 2: {
-                    int s = Settings.tiltSens(c);
-                    if (step != 0) {
-                        s = Math.max(1, Math.min(10, s + step));
-                        Settings.putNative(c, Settings.K_TILT_SENS, s);
-                        fullLockSin = (float) Math.sin(Math.toRadians(Settings.tiltAngle(s)));
-                    }
-                    return String.valueOf(s);
-                }
-                case 3:
-                case 4: {
-                    // mostwanted.toml's, shared with the launcher's CONTROLS (its own process): read again first
-                    loadLook(c);
-                    String key = row == 3 ? Settings.touchOpacityKey(mode) : Settings.touchSizeKey(mode);
+                case 0: return MODE_NAMES[Settings.padMode(t)];
+                case 1: return STEER_NAMES[Settings.steer(t)];
+                case 2: return String.valueOf(Settings.tiltSens(t));
+                case 3: case 4: {
                     int pct = Math.round((row == 3 ? opacity[mode] : size[mode]) * 100);
-                    if (step != 0) {
-                        pct = row == 3 ? Settings.stepTouchOpacity(pct, step) : Settings.stepTouchSize(pct, step);
-                        Settings.putNative(c, key, pct);
-                        if (row == 3) opacity[mode] = pct / 100f; else size[mode] = pct / 100f;
-                        invalidate();
-                    }
                     return pct + "%";
                 }
-                default:
-                    return "";
+                default: return "";
             }
         } catch (java.io.IOException e) {
             android.util.Log.w("nfsmw", "cannot save a control setting: " + e.getMessage());
@@ -1141,25 +1218,13 @@ public final class TouchControllerView extends View {
         }
     }
 
-    /** Each mode's opacity and size from the settings file; an opacity the editor kept in the preferences before is
-     *  the file's default until the file has its own. */
-    private void loadLook(Context c) {
-        TomlSettings t = Settings.nativeSettings(c);
+    /** Each mode's opacity and size as t (the settings file) has them; an opacity the editor kept in the preferences
+     *  before is the file's default until the file has its own. */
+    private void loadLook(TomlSettings t) {
         for (int m = 0; m < MODES; m++) {
             int legacy = Math.round(touchPrefs.getFloat("m" + m + "_opacity", Settings.TOUCH_OPACITY_DEF / 100f) * 100);
             opacity[m] = Settings.touchOpacity(t, m, legacy) / 100f;
             size[m] = Settings.touchSize(t, m) / 100f;
-        }
-    }
-
-    /** The editor's opacities into the settings file. */
-    private void saveOpacity() {
-        try {
-            Settings.updateNative(getContext(), t -> {
-                for (int m = 0; m < MODES; m++) t.put(Settings.touchOpacityKey(m), Math.round(opacity[m] * 100));
-            });
-        } catch (java.io.IOException e) {
-            android.util.Log.w("nfsmw", "cannot save the touch opacity: " + e.getMessage());
         }
     }
 
