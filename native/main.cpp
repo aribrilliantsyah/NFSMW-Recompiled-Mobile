@@ -221,22 +221,37 @@ void Load() {
 
 const std::string& GameDirSetting() { return g_game_dir; }
 
+// our values into the file's tables, leaf by leaf: a table we write ([keys]) keeps the entries we do not know
+static void Merge(toml::table& into, const toml::table& from) {
+    for (auto&& [key, value] : from) {
+        toml::table* have = into[key].as_table();
+        if (have && value.is_table()) Merge(*have, *value.as_table());
+        else into.insert_or_assign(key, value);
+    }
+}
+
 // the file is the launcher's too: our keys over what it holds ([padmap], save_dir, the overlay's, keys we do not know),
-// through a temporary file so a crash or the launcher never reads half of it
+// through a temporary file so a crash or the launcher never reads half of it. One broken since Load is kept as .bad
+// first (as Load does), and left alone if it cannot be
 void Save() {
     toml::table t;
-    try {
-        t = toml::parse_file(File().string());
-    } catch (...) {
+    std::error_code ec;
+    if (std::filesystem::exists(File(), ec)) {
+        try {
+            t = toml::parse_file(File().string());
+        } catch (const toml::parse_error&) {
+            std::filesystem::copy_file(File(), File().string() + ".bad",
+                                       std::filesystem::copy_options::overwrite_existing, ec);
+            if (ec) return;
+        }
     }
-    for (auto&& [key, value] : Table()) t.insert_or_assign(key, value);
+    Merge(t, Table());
     std::filesystem::path tmp = File().string() + ".tmp";
     {
         std::ofstream f(tmp);
         f << t << "\n";
         if (!f) return;
     }
-    std::error_code ec;
     std::filesystem::rename(tmp, File(), ec);
 }
 

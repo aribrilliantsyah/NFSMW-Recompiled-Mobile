@@ -193,14 +193,32 @@ final class Settings {
         return t;
     }
 
-    /** The overlay's mode, steering and tilt from the settings file (the in-game overlay, the editor). */
-    static int padMode(Context c) { return (int) nativeSettings(c).getInt(K_PAD_MODE, MODE_STEERING); }
+    /** The overlay's mode, steering and tilt from the settings file (the in-game overlay, the editor); the file is
+     *  anyone's to edit, and the overlay indexes its per-mode arrays with these, so an unknown value is the default. */
+    static int padMode(Context c) {
+        return oneOf(nativeSettings(c).getInt(K_PAD_MODE, MODE_STEERING), new int[] {MODE_FULL, MODE_STEERING},
+                     MODE_STEERING);
+    }
 
     static boolean widescreen(Context c) { return nativeSettings(c).getBool(K_WIDESCREEN, true); }
 
-    static int steer(Context c) { return (int) nativeSettings(c).getInt(K_STEER, STEER_STICK); }
+    static int steer(Context c) {
+        return oneOf(nativeSettings(c).getInt(K_STEER, STEER_STICK), new int[] {STEER_STICK, STEER_ARROWS, STEER_TILT},
+                     STEER_STICK);
+    }
 
-    static int tiltSens(Context c) { return (int) nativeSettings(c).getInt(K_TILT_SENS, 5); }
+    static int tiltSens(Context c) { return within(nativeSettings(c).getInt(K_TILT_SENS, 5), 1, 10, 5); }
+
+    /** v when it is one of known, else def. */
+    static int oneOf(long v, int[] known, int def) {
+        for (int k : known) if (k == v) return k;
+        return def;
+    }
+
+    /** v when it is in min..max, else def. */
+    static int within(long v, int min, int max, int def) {
+        return v >= min && v <= max ? (int) v : def;
+    }
 
     /** One key into the settings file, the rest of it as it is. */
     static void putNative(Context c, String key, Object v) throws IOException {

@@ -65,4 +65,52 @@ public class TomlSettingsTest {
         assertTrue(bad.exists());
         assertArrayEquals(broken, Files.readAllBytes(bad.toPath()));
     }
+
+    @Test
+    public void multiLineValuesKeptVerbatim() throws Exception {
+        File f = new File(tmp.getRoot(), "mostwanted.toml");
+        String body = "foo = [\n  1,\n  2, # two\n]\nnote = \"\"\"\nline \"one\"\n\"\"\"\n"
+                + "box = { x = 1.5, y = -2.0 }\nwhen = 1979-05-27T07:32:00Z\nratio = 1.25e3\nbloom = true\n"
+                + "\n[keys]\nup = \"W\"\n";
+        Files.write(f.toPath(), body.getBytes(StandardCharsets.UTF_8));
+        TomlSettings t = TomlSettings.load(f);
+        assertFalse(t.recovered());
+        assertTrue(t.getBool("bloom", false));
+        assertTrue(t.has("foo"));
+        t.put("bloom", false);
+        t.save(f);
+        String out = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+        assertEquals(body.replace("bloom = true", "bloom = false"), out);
+    }
+
+    @Test
+    public void malformedFilesAreBroken() throws Exception {
+        String[] bad = {
+            "bloom = true\nbloom = false\n",          // a key twice
+            "[keys]\nup = \"W\"\n[keys]\n",           // a table twice
+            "foo = @\n",                              // not a value
+            "language = \"int\" junk\n",              // junk after the value
+            "language = \"int\n",                     // string left open
+            "foo = [1, 2\n",                          // array left open
+            "note = \"\"\"never closed\n",            // multi-line string left open
+            "x = \"\\q\"\n",                          // bad escape
+        };
+        for (String b : bad) {
+            File f = tmp.newFile();
+            Files.write(f.toPath(), b.getBytes(StandardCharsets.UTF_8));
+            assertTrue(b, TomlSettings.load(f).recovered());
+            assertTrue(b, new File(f.getParentFile(), f.getName() + ".bad").exists());
+        }
+    }
+
+    @Test
+    public void outOfRangeIntsFallBack() {
+        int[] modes = {Settings.MODE_FULL, Settings.MODE_STEERING};
+        assertEquals(Settings.MODE_STEERING, Settings.oneOf(2, modes, Settings.MODE_STEERING));
+        assertEquals(Settings.MODE_STEERING, Settings.oneOf(-1, modes, Settings.MODE_STEERING));
+        assertEquals(Settings.MODE_FULL, Settings.oneOf(0, modes, Settings.MODE_STEERING));
+        assertEquals(5, Settings.within(11, 1, 10, 5));
+        assertEquals(5, Settings.within(0, 1, 10, 5));
+        assertEquals(10, Settings.within(10, 1, 10, 5));
+    }
 }

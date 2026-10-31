@@ -12,9 +12,11 @@ import java.util.List;
 /**
  * mostwanted.toml as the launcher and the game share it: a line-oriented
  * TOML subset. Top-level keys and the keys of [table]s ("padmap.a") hold
- * bools, integers or strings; every other line (comments, unknown tables,
- * values of other types) is kept verbatim, so what the native side writes
- * (native/main.cpp app::Save) survives the launcher's edits and back.
+ * bools, integers or strings; every other entry (comments, unknown tables,
+ * arrays, inline tables, multi-line strings, floats, dates) is kept verbatim,
+ * so what the native side writes (native/main.cpp app::Save) survives the
+ * launcher's edits and back. What toml++ would turn down is turned down here
+ * too, so both sides agree on a broken file.
  */
 final class TomlSettings {
     /** One line of the file; key null for a comment, a blank or a table header. */
@@ -44,7 +46,7 @@ final class TomlSettings {
             byte[] bytes = Files.readAllBytes(f.toPath());
             try {
                 t.parse(new String(bytes, StandardCharsets.UTF_8));
-            } catch (IllegalArgumentException e) {
+            } catch (IllegalArgumentException | IndexOutOfBoundsException e) {
                 t.lines.clear();
                 t.recovered = true;
                 Files.write(new File(f.getParentFile(), f.getName() + ".bad").toPath(), bytes);
@@ -149,96 +151,202 @@ final class TomlSettings {
         return text.trim().startsWith("[");
     }
 
+    /** Builds the lines, an entry whose value spans lines (an array, a multi-line string) as one. Strict enough to
+     *  turn down what toml++ (native app::Load) would: a duplicate key or table, a string left open, junk after a
+     *  value, a bare value that is no bool, number or date. */
     private void parse(String s) {
+        java.util.Set<String> seen = new java.util.HashSet<>();
         String table = "";
-        for (String raw : s.split("\r?\n", -1)) {
-            lines.add(parseLine(raw, table));
-            Line l = lines.get(lines.size() - 1);
-            if (l.key == null && isHeader(raw)) table = l.table;
+        int arrays = 0;
+        int p = 0, n = s.length();
+        while (p < n) {
+            int eol = eol(s, p);
+            String raw = s.substring(p, eol);
+            String t = raw.trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                lines.add(new Line(stripCr(raw), table, null, null));
+                p = next(s, eol);
+                continue;
+            }
+            if (t.startsWith("[")) {
+                boolean array = t.startsWith("[[");
+                int end = t.indexOf(array ? "]]" : "]");
+                if (end < 0) throw new IllegalArgumentException("unclosed table header: " + raw);
+                String name = t.substring(array ? 2 : 1, end).trim();
+                String after = t.substring(end + (array ? 2 : 1)).trim();
+                if (name.isEmpty() || !(after.isEmpty() || after.startsWith("#")))
+                    throw new IllegalArgumentException("bad table header: " + raw);
+                if (array) {
+                    // keys under an array of tables are not addressable: "[[" cannot be a table name put() makes
+                    table = "[[" + name + "#" + arrays++;
+                } else {
+                    if (!seen.add("[" + name)) throw new IllegalArgumentException("table twice: " + raw);
+                    table = name;
+                }
+                lines.add(new Line(stripCr(raw), table, null, null));
+                p = next(s, eol);
+                continue;
+            }
+            // key = value, the value maybe running over lines
+            int q = p;
+            while (s.charAt(q) == ' ' || s.charAt(q) == '\t') q++;
+            String key;
+            char c = s.charAt(q);
+            if (c == '"' || c == '\'') {
+                int close = s.indexOf(c, q + 1);
+                if (close < 0 || close > eol) throw new IllegalArgumentException("unclosed key: " + raw);
+                key = s.substring(q + 1, close);
+                q = close + 1;
+            } else {
+                int k = q;
+                while (k < eol && s.charAt(k) != '=') k++;
+                key = s.substring(q, k).trim().replaceAll("\\s", "");
+                if (!key.matches("[A-Za-z0-9_-]+(\\s*\\.\\s*[A-Za-z0-9_-]+)*"))
+                    throw new IllegalArgumentException("bad key: " + raw);
+                q = k;
+            }
+            while (q < eol && (s.charAt(q) == ' ' || s.charAt(q) == '\t')) q++;
+            if (q >= eol || s.charAt(q) != '=') throw new IllegalArgumentException("no key = value: " + raw);
+            q++;
+            while (q < eol && (s.charAt(q) == ' ' || s.charAt(q) == '\t')) q++;
+            if (q >= eol) throw new IllegalArgumentException("no value: " + raw);
+            Object[] value = new Object[1];
+            int end = value(s, q, value);
+            // after the value: blanks, a comment, the line's end
+            while (end < n && (s.charAt(end) == ' ' || s.charAt(end) == '\t')) end++;
+            int last = eol(s, end);
+            String rest = s.substring(end, last).trim();
+            if (!rest.isEmpty() && !rest.startsWith("#")) throw new IllegalArgumentException("junk after the value: " + raw);
+            if (!seen.add(table + "\u0000" + key)) throw new IllegalArgumentException("key twice: " + raw);
+            lines.add(new Line(stripCr(s.substring(p, last)), table, key, value[0]));
+            p = next(s, last);
         }
-        // split leaves one empty string after the last newline
-        if (!lines.isEmpty() && lines.get(lines.size() - 1).text.isEmpty() && s.endsWith("\n"))
-            lines.remove(lines.size() - 1);
     }
 
-    private static Line parseLine(String raw, String table) {
-        String t = raw.trim();
-        if (t.isEmpty() || t.startsWith("#")) return new Line(raw, table, null, null);
-        if (t.startsWith("[")) {
-            boolean array = t.startsWith("[[");
-            int end = t.indexOf(array ? "]]" : "]");
-            if (end < 0) throw new IllegalArgumentException("unclosed table header: " + raw);
-            String name = t.substring(array ? 2 : 1, end).trim();
-            if (name.isEmpty()) throw new IllegalArgumentException("empty table name: " + raw);
-            // keys under an array of tables are not addressable: "[[" cannot be a table name put() makes
-            return new Line(raw, array ? "[[" + name : name, null, null);
-        }
-        int eq;
-        String key;
-        if (t.charAt(0) == '"' || t.charAt(0) == '\'') {
-            int close = t.indexOf(t.charAt(0), 1);
-            if (close < 0) throw new IllegalArgumentException("unclosed key: " + raw);
-            key = t.substring(1, close);
-            eq = t.indexOf('=', close + 1);
-            if (eq < 0 || !t.substring(close + 1, eq).trim().isEmpty()) throw new IllegalArgumentException("no value: " + raw);
-        } else {
-            eq = t.indexOf('=');
-            if (eq <= 0) throw new IllegalArgumentException("no key = value: " + raw);
-            key = t.substring(0, eq).trim();
-            if (!key.matches("[A-Za-z0-9_.-]+")) throw new IllegalArgumentException("bad key: " + raw);
-        }
-        String v = t.substring(eq + 1).trim();
-        if (v.isEmpty() || v.startsWith("=")) throw new IllegalArgumentException("no value: " + raw);
-        return new Line(raw, table, key, value(v));
+    private static int eol(String s, int p) {
+        int e = s.indexOf('\n', p);
+        return e < 0 ? s.length() : e;
     }
 
-    /** A bool, an integer or a one-line string; null for any other value (kept, not readable here). */
-    private static Object value(String v) {
-        char c = v.charAt(0);
-        if (c == '"') return basic(v);
+    private static int next(String s, int eol) { return Math.min(s.length(), eol + 1); }
+
+    private static String stripCr(String s) { return s.endsWith("\r") ? s.substring(0, s.length() - 1) : s; }
+
+    private static final java.util.regex.Pattern BARE_KEPT = java.util.regex.Pattern.compile(
+        "[+-]?(inf|nan)"                                                            // special floats
+        + "|0x[0-9A-Fa-f_]+|0o[0-7_]+|0b[01_]+"                                     // other integers
+        + "|[+-]?[0-9][0-9_]*(\\.[0-9][0-9_]*)?([eE][+-]?[0-9][0-9_]*)?"            // floats
+        + "|[0-9]{4}-[0-9]{2}-[0-9]{2}([Tt ][0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]+)?)?([Zz]|[+-][0-9]{2}:[0-9]{2})?)?"
+        + "|[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]+)?)?");                             // local time
+
+    /** The value at s[p]: its end, and in out[0] a Boolean, Long or String, or null for a value kept as it is
+     *  (an array, an inline table, a multi-line string, a float, a date). */
+    private static int value(String s, int p, Object[] out) {
+        char c = s.charAt(p);
+        if (s.startsWith("\"\"\"", p) || s.startsWith("'''", p)) return multiline(s, p);
+        if (c == '"') {
+            StringBuilder b = new StringBuilder();
+            int e = basic(s, p, b);
+            out[0] = b.toString();
+            return e;
+        }
         if (c == '\'') {
-            int close = v.indexOf('\'', 1);
-            if (close < 0) throw new IllegalArgumentException("unclosed string: " + v);
-            return v.startsWith("'''") ? null : v.substring(1, close);
+            int close = s.indexOf('\'', p + 1);
+            if (close < 0 || close > eol(s, p)) throw new IllegalArgumentException("unclosed string at " + p);
+            out[0] = s.substring(p + 1, close);
+            return close + 1;
         }
-        String bare = v;
-        int hash = bare.indexOf('#');
-        if (hash >= 0) bare = bare.substring(0, hash).trim();
-        if (bare.equals("true")) return Boolean.TRUE;
-        if (bare.equals("false")) return Boolean.FALSE;
-        if (bare.matches("[+-]?[0-9][0-9_]*")) {
-            try { return Long.parseLong(bare.replace("_", "").replace("+", "")); }
-            catch (NumberFormatException e) { return null; }
+        if (c == '[' || c == '{') return nested(s, p);
+        int e = p;
+        while (e < s.length() && " \t\r\n,#]}".indexOf(s.charAt(e)) < 0) e++;
+        String bare = s.substring(p, e);
+        // a date and its time, apart
+        if (bare.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}") && e + 1 < s.length() && s.charAt(e) == ' '
+                && Character.isDigit(s.charAt(e + 1))) {
+            int f = e + 1;
+            while (f < s.length() && " \t\r\n,#]}".indexOf(s.charAt(f)) < 0) f++;
+            bare = s.substring(p, f);
+            e = f;
         }
-        return null;
+        if (bare.equals("true")) out[0] = Boolean.TRUE;
+        else if (bare.equals("false")) out[0] = Boolean.FALSE;
+        else if (bare.matches("[+-]?(0|[1-9](_?[0-9])*)")) {
+            try { out[0] = Long.parseLong(bare.replace("_", "").replace("+", "")); }
+            catch (NumberFormatException x) { throw new IllegalArgumentException("integer out of range: " + bare); }
+        } else if (!BARE_KEPT.matcher(bare).matches()) throw new IllegalArgumentException("not a value: " + bare);
+        return e;
     }
 
-    private static String basic(String v) {
-        if (v.startsWith("\"\"\"")) return null;
-        StringBuilder b = new StringBuilder();
-        for (int i = 1; i < v.length(); i++) {
-            char ch = v.charAt(i);
-            if (ch == '"') return b.toString();
+    /** """...""" or '''...''', which may hold up to two more quotes before the closing three. */
+    private static int multiline(String s, int p) {
+        char q = s.charAt(p);
+        int i = p + 3;
+        while (i < s.length()) {
+            char ch = s.charAt(i);
+            if (q == '"' && ch == '\\') { i += 2; continue; }
+            if (s.startsWith(q == '"' ? "\"\"\"" : "'''", i)) {
+                int e = i + 3;
+                for (int k = 0; k < 2 && e < s.length() && s.charAt(e) == q; k++) e++;
+                return e;
+            }
+            i++;
+        }
+        throw new IllegalArgumentException("unclosed multi-line string at " + p);
+    }
+
+    /** An array or inline table, brackets balanced, strings and comments in it skipped. */
+    private static int nested(String s, int p) {
+        int depth = 0;
+        int i = p;
+        while (i < s.length()) {
+            char ch = s.charAt(i);
+            if (s.startsWith("\"\"\"", i) || s.startsWith("'''", i)) { i = multiline(s, i); continue; }
+            if (ch == '"') { i = basic(s, i, new StringBuilder()); continue; }
+            if (ch == '\'') {
+                int close = s.indexOf('\'', i + 1);
+                if (close < 0 || close > eol(s, i)) throw new IllegalArgumentException("unclosed string at " + i);
+                i = close + 1;
+                continue;
+            }
+            if (ch == '#') { i = eol(s, i); continue; }
+            if (ch == '[' || ch == '{') depth++;
+            else if (ch == ']' || ch == '}') {
+                if (--depth == 0) return i + 1;
+                if (depth < 0) break;
+            }
+            i++;
+        }
+        throw new IllegalArgumentException("unclosed array or table at " + p);
+    }
+
+    /** A one-line basic string at s[p] into b; its end. */
+    private static int basic(String s, int p, StringBuilder b) {
+        for (int i = p + 1; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch == '"') return i + 1;
+            if (ch == '\n') break;
             if (ch != '\\') { b.append(ch); continue; }
-            if (++i >= v.length()) break;
-            char e = v.charAt(i);
+            if (++i >= s.length()) break;
+            char e = s.charAt(i);
             switch (e) {
                 case 'n': b.append('\n'); break;
                 case 't': b.append('\t'); break;
                 case 'r': b.append('\r'); break;
                 case 'b': b.append('\b'); break;
                 case 'f': b.append('\f'); break;
+                case '"': case '\\': b.append(e); break;
                 case 'u': case 'U': {
-                    int n = e == 'u' ? 4 : 8;
-                    if (i + n >= v.length()) throw new IllegalArgumentException("bad escape: " + v);
-                    b.appendCodePoint(Integer.parseInt(v.substring(i + 1, i + 1 + n), 16));
-                    i += n;
+                    int len = e == 'u' ? 4 : 8;
+                    if (i + len >= s.length()) throw new IllegalArgumentException("bad escape at " + i);
+                    try { b.appendCodePoint(Integer.parseInt(s.substring(i + 1, i + 1 + len), 16)); }
+                    catch (IllegalArgumentException x) { throw new IllegalArgumentException("bad escape at " + i); }
+                    i += len;
                     break;
                 }
-                default: b.append(e);
+                default: throw new IllegalArgumentException("bad escape at " + i);
             }
         }
-        throw new IllegalArgumentException("unclosed string: " + v);
+        throw new IllegalArgumentException("unclosed string at " + p);
     }
 
     private static String format(Object v) {

@@ -162,12 +162,28 @@ final class UiKit {
         return r;
     }
 
+    /** A drop-down. A current value not among values is shown as its own entry, so the row keeps it (and writes
+     *  nothing) until the player picks another; set runs only for a pick that changes the value. */
     View choice(String title, String summary, String[] labels, int[] values, int current, Consumer<Integer> set) {
+        int at = -1;
+        for (int i = 0; i < values.length; i++) if (values[i] == current) at = i;
+        final String[] shown;
+        final int[] vals;
+        if (at < 0) {
+            shown = java.util.Arrays.copyOf(labels, labels.length + 1);
+            vals = java.util.Arrays.copyOf(values, values.length + 1);
+            shown[labels.length] = String.valueOf(current);
+            vals[values.length] = current;
+            at = values.length;
+        } else {
+            shown = labels;
+            vals = values;
+        }
         Spinner sp = new Spinner(c, Spinner.MODE_DROPDOWN);
-        ArrayAdapter<String> a = new ArrayAdapter<String>(c, android.R.layout.simple_spinner_item, labels) {
+        ArrayAdapter<String> a = new ArrayAdapter<String>(c, android.R.layout.simple_spinner_item, shown) {
             @Override public View getView(int pos, View cv, ViewGroup parent) {
                 TextView t = (TextView) super.getView(pos, cv, parent);
-                t.setText(labels[pos] + "  \u25BE");
+                t.setText(shown[pos] + "  \u25BE");
                 t.setTextColor(ACCENT);
                 t.setTextSize(14);
                 t.setTypeface(Typeface.DEFAULT_BOLD);
@@ -180,9 +196,15 @@ final class UiKit {
         sp.setBackground(box(PANEL, 0xFF4A4A4A, 8));
         sp.setLayoutParams(new LinearLayout.LayoutParams(dp(140), -2));
         sp.setPadding(dp(10), dp(4), dp(10), dp(4));
-        for (int i = 0; i < values.length; i++) if (values[i] == current) sp.setSelection(i);
+        sp.setSelection(at);
+        // the spinner reports its first layout as a selection: only a different value is the player's
+        int[] last = {current};
         sp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) { set.accept(values[pos]); }
+            @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                if (vals[pos] == last[0]) return;
+                last[0] = vals[pos];
+                set.accept(vals[pos]);
+            }
             @Override public void onNothingSelected(AdapterView<?> p) { }
         });
         return row(title, summary, sp);
@@ -209,7 +231,7 @@ final class UiKit {
         sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar s, int p, boolean user) {
                 val.setText(fmt.apply(p + min));
-                set.accept(p + min);
+                if (user) set.accept(p + min);
             }
             @Override public void onStartTrackingTouch(SeekBar s) { }
             @Override public void onStopTrackingTouch(SeekBar s) { }
