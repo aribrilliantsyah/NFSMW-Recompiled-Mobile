@@ -34,8 +34,16 @@ mostwanted.toml
 .vscode/
 .idea/
 
-# Local temporary folder
+# Local temporary folders (.work holds test evidence and the release secrets)
 .local
+/.work/
+__pycache__/
+
+# the previous engine's folders, left in old checkouts (branch experimental-old)
+/android/
+/xboxrecomp/
+/roms/
+/dist/
 
 # Linux host build (linux/CMakeLists.txt) and its run folders
 /linux/build*/
