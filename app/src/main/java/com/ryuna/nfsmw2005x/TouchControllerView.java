@@ -56,7 +56,7 @@ public final class TouchControllerView extends View {
 
     private static final String PREFS = "nfsmw_touch";
     /** Bump when the factory layouts change. */
-    private static final int LAYOUT_VERSION = 6;
+    private static final int LAYOUT_VERSION = 7;
     private static final boolean DEBUG = android.util.Log.isLoggable("nfsmw-pad", android.util.Log.DEBUG);
     private static final int MODES = 2;
     private static final String[] MODE_NAMES = {"XBOX", "MOBILE"};      // Settings.MODE_XBOX, MODE_MOBILE
@@ -396,8 +396,8 @@ public final class TouchControllerView extends View {
         top(add(pill("back", ButtonArt.Icon.BACK, BACK)).at(MO, .43f, .07f));
         top(menu(add(round("menu", ButtonArt.Icon.MENU, null, null, 0, -1, 0, .9f, ButtonArt.COLOR_GREY)))).at(MO, .50f, .07f);
         top(add(pill("start", ButtonArt.Icon.START, START)).at(MO, .57f, .07f));
-        // Black is the camera; its badge an empty disc, as Black has no letter
-        add(round("black", ButtonArt.Icon.CAMERA, " ", null, 0, BLACK, 0, .9f, ButtonArt.COLOR_GREY)).at(MO, .95f, .07f);
+        // Black is the camera: the ring and its icon alone, no badge (Black has no letter)
+        add(round("black", ButtonArt.Icon.CAMERA, null, null, 0, BLACK, 0, .9f, ButtonArt.COLOR_GREY)).at(MO, .95f, .07f);
         Control dpad = add(new Control("dpad", null, null, null, K_DPAD, 0, -1, 0, 0, .8f, 0));
         place(dpad, MO, margin + .8f * u, .41f * h);
         add(round("nos", ButtonArt.Icon.NOS, "B", null, 0, B, 0, 1.5f, ButtonArt.COLOR_B)).at(MO, .219f, .539f);
@@ -405,18 +405,19 @@ public final class TouchControllerView extends View {
             Control ls = add(new Control("ls", null, null, null, K_STICK, 0, -1, 0, 0, 1.2f, 0));
             place(ls, MO, margin + 1.2f * u, .718f * h);
         } else if (steer == Settings.STEER_ARROWS) {
-            // the arrows mirror the pedals: the same gap between them, the same distance from the edge, bottoms on
-            // the pedals' line
-            float d = 1.9f * u, lx = margin + d / 2, rx = lx + d + .021f * w, y = h - .0391f * h - .06f * h - d / 2;
-            place(add(new Control("steer_l", ButtonArt.Icon.LEFT, null, null, K_ARROW, 0, -1, 0, -1, 1.9f, 1.9f)), MO, lx, y);
-            place(add(new Control("steer_r", ButtonArt.Icon.RIGHT, null, null, K_ARROW, 0, -1, 0, 1, 1.9f, 1.9f)), MO, rx, y);
+            // the user's layout (2026-11-01): 1.8u round arrows, left edge on the margin, centres at y .797 and an
+            // edge gap the width of the pedals'
+            float d = 1.8f * u, lx = margin + d / 2, rx = lx + d + .021f * w, y = .797f * h;
+            place(add(new Control("steer_l", ButtonArt.Icon.LEFT, null, null, K_ARROW, 0, -1, 0, -1, 1.8f, 1.8f)), MO, lx, y);
+            place(add(new Control("steer_r", ButtonArt.Icon.RIGHT, null, null, K_ARROW, 0, -1, 0, 1, 1.8f, 1.8f)), MO, rx, y);
         } else if (steer == Settings.STEER_WHEEL) {
             Control wheel = add(new Control("wheel", null, null, null, K_WHEEL, 0, -1, 0, 0, 1.35f, 0));
             place(wheel, MO, margin + 1.35f * u, .718f * h);
         }                                                   // tilt: nothing on the screen
-        add(round("y", ButtonArt.Icon.LOOKBACK, "Y", null, 0, Y, 0, 1.15f, ButtonArt.COLOR_Y)).at(MO, .862f, .30f);
-        add(round("x", ButtonArt.Icon.SPEEDBREAKER, "X", null, 0, X, 0, 1.15f, ButtonArt.COLOR_X)).at(MO, .939f, .46f);
-        add(round("a", ButtonArt.Icon.EBRAKE, "A", null, 0, A, 0, 1.15f, ButtonArt.COLOR_A)).at(MO, .805f, .52f);
+        // the user's layout (2026-11-01): Y and A lower, A further left, X as before
+        add(round("y", ButtonArt.Icon.LOOKBACK, "Y", null, 0, Y, 0, 1.15f, ButtonArt.COLOR_Y)).at(MO, .855f, .486f);
+        add(round("x", ButtonArt.Icon.SPEEDBREAKER, "X", null, 0, X, 0, 1.15f, ButtonArt.COLOR_X)).at(MO, .942f, .449f);
+        add(round("a", ButtonArt.Icon.EBRAKE, "A", null, 0, A, 0, 1.15f, ButtonArt.COLOR_A)).at(MO, .786f, .573f);
         add(new Control("gas", ButtonArt.Icon.GAS, "RT", null, K_PEDAL, 0, -1, 2, 0, 1.45f, 2.7f)).at(MO, .939f, .751f);
         add(new Control("brake", ButtonArt.Icon.BRAKE, "LT", null, K_PEDAL, 0, -1, 1, 0, 1.35f, 2.1f)).at(MO, .848f, .781f);
         // the gear lever is the right stick (the spec's "Gear lever | right stick"): a drag is that stick, a tap
