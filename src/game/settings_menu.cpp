@@ -436,10 +436,12 @@ uint64_t TouchNowMs() {
 
 // FEng's mouse clicks our rows' arrows too, but its click is a step of the row the cursor is on (the console's screens
 // dropped the PC's code that moved the cursor first), its release after a swipe clicks whatever arrow the finger left
-// on, and touch.cpp's swipes come as dpad Left/Right: so in our rows a step from the pad's Left/Right counts only with
-// no finger about, and a touch is ours alone (TapRows): an arrow tapped steps its own row, a label or value tapped
-// moves the cursor to it, a swipe (the finger moved) steps nothing
+// on, and touch.cpp's swipes come as dpad Left/Right the other way round (the list follows the finger): so in our rows
+// a step from the pad's Left/Right counts only with no finger about, and a touch is ours alone (TapRows): an arrow
+// tapped steps its own row, a label or value tapped moves the cursor to it, a sideways swipe steps the row it began on
+// (or the cursor's) one value, right the next, left the one before; an upright swipe is touch.cpp's scroll
 constexpr float kTapSlop = 12.0f;        // FEng units (480 high) a tap's finger may move
+constexpr float kSwipeMin = 28.8f;       // touch.cpp's swipe (0.06 screen heights) in FEng units
 constexpr uint64_t kFingerQuietMs = 900;  // after a lift: touch.cpp's queued swipe steps (6 at most, 120 ms each)
 uint64_t g_finger_at = 0;                // the finger was last down then (game thread)
 
@@ -526,9 +528,41 @@ bool OpenRow(X86Context& ctx, uint32_t widget) {
 
 uint32_t g_lifts_seen = 0;
 
+// the row whose band (its left arrow's or value's height) holds y, wherever across: a swipe may start between the
+// title and the value, where RowAt finds nothing
+uint32_t RowBand(X86Context& ctx, float y) {
+    uint32_t current, package;
+    float ox, oy;
+    if (!LiveWidgets(ctx, current, &package) || !GroupOffset(ctx, package, ox, oy)) return 0;
+    y -= oy;
+    for (uint32_t widget : g_window.widgets) {
+        if (Peek(widget) != g_widget_vtable || !kernel::G<uint8_t>(widget + kWidgetEnabled)) continue;
+        uint32_t left = Peek(widget + kWidgetLeft), value = Peek(widget + kWidgetValue);
+        if ((left && Hits(ctx, PlaceX(ctx, left), y, left)) || (value && Hits(ctx, PlaceX(ctx, value), y, value)))
+            return widget;
+    }
+    return 0;
+}
+
+// a sideways swipe: one value of the row it began on (or the cursor's), right the next, left the one before. One a
+// swipe, not one per swipe step: most rows hold two values, where a second step undid the first
+bool SwipeRow(X86Context& ctx, const FeTap& t) {
+    float dx = t.up_x - t.down_x, dy = t.up_y - t.down_y;
+    if (std::fabs(dx) < kSwipeMin || std::fabs(dx) <= std::fabs(dy)) return false;
+    uint32_t current;
+    if (!LiveWidgets(ctx, current)) return false;
+    uint32_t widget = RowBand(ctx, t.down_y);
+    if (widget && widget != current) CallThis(ctx, g_window.screen, kSetCurrent, {widget});
+    else widget = current;
+    if (!widget || Peek(widget) != g_widget_vtable) return false;
+    Step(ctx, widget, dx > 0 ? kRight : kLeft);
+    FeTakeAccept();
+    return true;
+}
+
 // a touch ended on our rows: an arrow tapped steps its own row, a title or value tapped moves the cursor to it (or
-// opens an action row), a swipe (its ends apart) steps nothing. From the touch's two ends (FeLastTouch), so a tap
-// shorter than an update counts too
+// opens an action row), a sideways swipe steps a row's value (SwipeRow), an upright one steps nothing here. From the
+// touch's two ends (FeLastTouch), so a tap shorter than an update counts too
 void TapRows(X86Context& ctx) {
     float x, y;
     if (FeFinger(x, y)) g_finger_at = TouchNowMs();
@@ -536,7 +570,10 @@ void TapRows(X86Context& ctx) {
     if (t.lifts == g_lifts_seen) return;
     g_lifts_seen = t.lifts;
     g_finger_at = TouchNowMs();
-    if (std::fabs(t.up_x - t.down_x) > kTapSlop || std::fabs(t.up_y - t.down_y) > kTapSlop) return;
+    if (std::fabs(t.up_x - t.down_x) > kTapSlop || std::fabs(t.up_y - t.down_y) > kTapSlop) {
+        SwipeRow(ctx, t);
+        return;
+    }
     uint32_t current;
     int part = 0, part_down = 0;
     uint32_t widget = RowAt(ctx, t.up_x, t.up_y, &part);
