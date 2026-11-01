@@ -116,22 +116,6 @@ uint32_t g_settings_react = 0;
 
 // ---- text helpers ----
 
-std::string TitleCase(std::string text) {
-    static const char* const kKeep[] = {"FPS", "CPU", "GPU", "FXAA", "SSAA", "HDR", "CRT", "EA", "UI", "TV", "HUD", "V-Sync"};
-    size_t start = 0;
-    while (start < text.size()) {
-        size_t end = text.find_first_of(" /()-", start);
-        if (end == std::string::npos) end = text.size();
-        std::string word = text.substr(start, end - start);
-        bool keep = std::any_of(word.begin(), word.end(), [](char c) { return std::isdigit(uint8_t(c)); });
-        for (const char* k : kKeep) keep |= word == k;
-        for (size_t i = start + 1; !keep && i < end; i++)
-            if (uint8_t(text[i]) < 0x80) text[i] = char(std::tolower(uint8_t(text[i])));
-        start = end + 1;
-    }
-    return text;
-}
-
 std::string Latin1(const std::string& text) {
     std::string out;
     for (size_t i = 0; i < text.size(); i++) {
@@ -233,8 +217,9 @@ int CurrentCategory() {
     return cat >= 0 && cat < settings::kCount ? cat : -1;
 }
 
-// the in-game labels are English whatever the language (spec 2.1): the game's font may lack a translation's letters
-std::string CategoryTitle(int cat) { return settings::Name(settings::Category(cat)); }
+// the category's name in the boot language (app::Ui: Indonesian has its own, the rest English); its rows and values
+// stay English (spec 2.1), so a translation missing a letter of the game's font is a title, not a menu
+std::string CategoryTitle(int cat) { return app::Ui(settings::Name(settings::Category(cat)), false); }
 
 // ---- icons ----
 
@@ -367,7 +352,7 @@ void WidgetDraw(X86Context& ctx, uint8_t*) {
     if (const settings::Row* r = RowOf(widget)) {
         std::string value = settings::Value(*r);
         Print(ctx, R32(widget + kWidgetTitle), r->label);
-        Print(ctx, R32(widget + kWidgetValue), TitleCase(value));
+        Print(ctx, R32(widget + kWidgetValue), value);  // sentence case at its source (settings_rows.cpp)
         uint32_t esp = ctx.esp;
         CallThis(ctx, widget, R32(R32(widget) + kPositionSlot), {});
         ctx.esp = esp;

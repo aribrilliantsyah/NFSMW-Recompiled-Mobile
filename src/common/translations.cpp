@@ -31,6 +31,13 @@ constexpr Entry kEntries[] = {
     {"TOUCH CONTROLS", {u"Commandes tactiles", u"Touch-Steuerung", u"Comandi touch", u"Controles táctiles", u"Kontrol sentuh"}},
     {"UPDATES", {u"Mises à jour", u"Updates", u"Aggiornamenti", u"Actualizaciones", u"Pembaruan"}},
     {"CONTROLS", {{}, {}, {}, {}, u"Kontrol"}},
+    // the Configuration menu's categories (src/common/settings_rows.cpp's Name), sentence case; CONTROLS and CHEATS
+    // are the entries above and below
+    {"SCREEN", {{}, {}, {}, {}, u"Layar"}},
+    {"SPEED", {{}, {}, {}, {}, u"Kecepatan"}},
+    {"VISUALS", {{}, {}, {}, {}, u"Visual"}},
+    {"SYSTEM", {{}, {}, {}, {}, u"Sistem"}},
+    {"SAVES", {{}, {}, {}, {}, u"Simpanan"}},
 
     // the settings rows
     {"RESOLUTION", {u"Résolution", u"Auflösung", u"Risoluzione", u"Resolución", u"Resolusi"}},

@@ -58,7 +58,9 @@ int StepTable(const uint32_t (&values)[N], uint32_t& value, int step) {
     return i;
 }
 
-std::string OnOff(bool v) { return v ? "ON" : "OFF"; }
+// every name here in sentence case (the Configuration menu's rule): a capital first letter, acronyms and units as they
+// are (FPS, V-Sync, FXAA, CRT, HDR, 2x); src/game/settings_menu.cpp translates them (app::Ui)
+std::string OnOff(bool v) { return v ? "On" : "Off"; }
 
 // ---- row ids, unique per category ----
 
@@ -82,8 +84,8 @@ enum : int { kCheatNos = 500, kCheatSpeedbreaker, kCheatNoPolice, kCheatUnlockAl
 
 constexpr uint32_t kFpsCaps[] = {30, 60, 75, 90, 120, 144, 165, 240, 360, app::kFpsCapRefresh, 0};
 const char* FpsCapName(uint32_t v) {
-    if (v == 0) return "UNLIMITED";
-    if (v == app::kFpsCapRefresh) return "REFRESH RATE";
+    if (v == 0) return "Unlimited";
+    if (v == app::kFpsCapRefresh) return "Refresh rate";
     static char buf[32];
     std::snprintf(buf, sizeof(buf), "%u", v);
     return buf;
@@ -100,34 +102,34 @@ constexpr uint32_t kAspectCodes[] = {0, 100, 125, 133, 150, 160, 178, 200, 217, 
 const char* AspectName(uint32_t code) {
     for (const game::AspectChoice& a : game::kAspects)
         if (a.code == code) return a.name;
-    return "FULL SCREEN";
+    return "Full screen";
 }
 
 constexpr uint32_t kScreenFilters[] = {0, 1, 2, 3, 4, 5};
-const char* const kScreenFilterNames[] = {"OFF", "SHARPEN", "VIVID", "SCANLINES", "CRT", "HDR"};
+const char* const kScreenFilterNames[] = {"Off", "Sharpen", "Vivid", "Scanlines", "CRT", "HDR"};
 
 constexpr uint32_t kAntiAliasings[] = {game::kAaOff, game::kAaFxaa, game::kAaSsaa};
-const char* const kAntiAliasingNames[] = {"OFF", "FXAA", "SSAA 2X"};
+const char* const kAntiAliasingNames[] = {"Off", "FXAA", "SSAA 2x"};
 
 constexpr uint32_t kAnisoValues[] = {0, 2, 4, 8, 16};
-const char* const kAnisoNames[] = {"GAME DEFAULT", "2x", "4x", "8x", "16x"};
+const char* const kAnisoNames[] = {"Game default", "2x", "4x", "8x", "16x"};
 
 constexpr uint32_t kReflectionRates[] = {0, 1, 2, 3};
-const char* const kReflectionNames[] = {"FULL", "HALF", "QUARTER", "OFF"};
+const char* const kReflectionNames[] = {"Full", "Half", "Quarter", "Off"};
 
 constexpr uint32_t kAudioOutputs[] = {audio::kOutputAuto, audio::kOutputMono, audio::kOutputStereo, audio::kOutputSurround};
-const char* const kAudioOutputNames[] = {"AUTOMATIC", "MONO", "2.0 STEREO", "5.1 SURROUND"};
+const char* const kAudioOutputNames[] = {"Automatic", "Mono", "2.0 stereo", "5.1 surround"};
 
-const char* const kLanguageNames[] = {"ENGLISH", "FRENCH", "GERMAN", "ITALIAN", "SPANISH", "INDONESIAN"};
+const char* const kLanguageNames[] = {"English", "French", "German", "Italian", "Spanish", "Indonesian"};
 constexpr int kLanguageCount = int(std::size(game::kLanguages));
 
 // CONTROLS: modes read from mostwanted.toml directly
 const char* const kModeNames[] = {"XBOX", "MOBILE"};
-const char* const kSteerNames[] = {"STICK", "ARROWS", "TILT", "WHEEL"};
+const char* const kSteerNames[] = {"Stick", "Arrows", "Tilt", "Wheel"};
 
 enum FpsPosition : uint32_t { kFpsTop, kFpsTopLeft, kFpsTopRight, kFpsBottomLeft, kFpsBottom, kFpsBottomRight };
 constexpr uint32_t kFpsPositions[] = {kFpsTop, kFpsTopLeft, kFpsTopRight, kFpsBottomLeft, kFpsBottom, kFpsBottomRight};
-const char* const kFpsPositionNames[] = {"TOP CENTER", "TOP LEFT", "TOP RIGHT", "BOTTOM LEFT", "BOTTOM CENTER", "BOTTOM RIGHT"};
+const char* const kFpsPositionNames[] = {"Top center", "Top left", "Top right", "Bottom left", "Bottom center", "Bottom right"};
 
 // ---- presets ----
 
@@ -155,7 +157,7 @@ constexpr PresetState kPresets[kPresetCount] = {
     // Max: the full resolution, no cap, V-Sync, everything on
     {100, 0, true, false, 0, true, true, true, true, true, true, 0, true, true, true, true, true, game::kAaSsaa, 16},
 };
-const char* const kPresetNames[] = {"SAVER", "BALANCED", "MAX", "CUSTOM"};
+const char* const kPresetNames[] = {"Saver", "Balanced", "Max", "Custom"};
 
 PresetState Current() {
     const game::Options& o = game::Opt();
@@ -552,7 +554,7 @@ std::string Value(const Row& r, int step) {
         case kSkipMovies: return toggle(o.skip_movies);
         // read-only in the game: the slot is the hard disk the game booted with; the launcher's SAVES changes it
         case kActiveSave: return CurrentSlot();
-        case kAbout: return std::string("BUILD ") + BUILD_COMMIT;
+        case kAbout: return std::string("Build ") + BUILD_COMMIT;
 
         // CHEATS: ApplyCheats (src/game/game.cpp) holds them at each present
         case kCheatNos: return toggle(o.cheat_nos);
@@ -566,7 +568,7 @@ std::string Value(const Row& r, int step) {
             // no "$": FEng's text takes "$" as the start of a string-table name (0x137E0D) and showed "ion_data"
             return Grouped(g_cash_draft);
         // a set cash not yet applied (no profile yet) waits
-        case kApplyCash: return o.cheat_set_cash != game::kNoCash ? "PENDING" : "";
+        case kApplyCash: return o.cheat_set_cash != game::kNoCash ? "Pending" : "";
         default: return "";
     }
 }
@@ -615,7 +617,7 @@ void Defaults(Category cat) {
 }
 
 const char* Name(Category cat) {
-    static const char* names[] = {"SCREEN", "SPEED", "VISUALS", "CONTROLS", "SYSTEM", "CHEATS"};
+    static const char* names[] = {"Screen", "Speed", "Visuals", "Controls", "System", "Cheats"};
     return cat >= 0 && cat < kCount ? names[cat] : "";
 }
 

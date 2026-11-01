@@ -45,7 +45,8 @@ public class LauncherActivity extends Activity {
     private android.widget.Button mIsoBtn, mIsoSmall;
     private TextView mPlayHint;
     /** The tabs: the in-game menu's categories (settings::Name) in its order, then the launcher's SAVES. */
-    private static final String[] TABS = {"SCREEN", "SPEED", "VISUALS", "CONTROLS", "SYSTEM", "CHEATS", "SAVES"};
+    // sentence case, as the game's Configuration menu names them (src/common/settings_rows.cpp's Name)
+    private static final String[] TABS = {"Screen", "Speed", "Visuals", "Controls", "System", "Cheats", "Saves"};
     private static final int T_SCREEN = 0, T_SPEED = 1, T_VISUALS = 2, T_CONTROLS = 3, T_SYSTEM = 4, T_CHEATS = 5,
             T_SAVES = 6;
     private int mTab;
@@ -202,7 +203,7 @@ public class LauncherActivity extends Activity {
     static final int CATEGORY_GREY = 0xFF9AA0A6;
 
     private LinearLayout screenCard() {
-        LinearLayout c = category("SCREEN");
+        LinearLayout c = category("Screen");
         c.addView(ui.toggle("Widescreen (next start)", "On: the whole screen, the game's widescreen mode widened to the phone (Hor+). "
                 + "Off: the Xbox's 4:3 picture with side bars.",
                 flag(Settings.K_WIDESCREEN, true), v -> put(Settings.K_WIDESCREEN, v)));
@@ -224,7 +225,7 @@ public class LauncherActivity extends Activity {
     }
 
     private LinearLayout speedCard() {
-        LinearLayout c = category("SPEED");
+        LinearLayout c = category("Speed");
         mPresetRow = ui.column();
         c.addView(mPresetRow);
         refreshPreset();
@@ -267,7 +268,7 @@ public class LauncherActivity extends Activity {
     }
 
     private LinearLayout visualsCard() {
-        LinearLayout c = category("VISUALS");
+        LinearLayout c = category("Visuals");
         c.addView(ui.toggle("Bloom", null, flag(Settings.K_BLOOM, true), v -> put(Settings.K_BLOOM, v)));
         c.addView(ui.toggle("Fog", null, flag(Settings.K_FOG, true), v -> put(Settings.K_FOG, v)));
         c.addView(ui.toggle("Motion blur", "The blur by speed and the nitrous' radial blur.",
@@ -294,10 +295,10 @@ public class LauncherActivity extends Activity {
 
     private LinearLayout gameCard() {
         LinearLayout c = ui.card();
-        c.addView(ui.section("GAME"));
+        c.addView(ui.section("Game"));
         // No game yet: the ISO is the way in (extracted once into the app's
         // folder). With a game there, PLAY.
-        mIsoBtn = ui.primary("INSTALL FROM ISO…", v -> pickIso());
+        mIsoBtn = ui.primary("Install from ISO…", v -> pickIso());
         c.addView(mIsoBtn, new LinearLayout.LayoutParams(-1, -2));
         mPlayHint = ui.summary("Pick your NFS Most Wanted disc image (.iso, Xbox NTSC-U). It is extracted once "
                 + "into the app's folder (~2.9 GB); afterwards the .iso can be deleted. "
@@ -335,7 +336,7 @@ public class LauncherActivity extends Activity {
         LinearLayout.LayoutParams il = new LinearLayout.LayoutParams(-1, -2);
         il.topMargin = ui.dp(8);
         c.addView(mIsoSmall, il);
-        mPlay = ui.primary("PLAY", v -> play());
+        mPlay = ui.primary("Play", v -> play());
         LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(-1, -2);
         pl.topMargin = ui.dp(12);
         c.addView(mPlay, pl);
@@ -346,7 +347,7 @@ public class LauncherActivity extends Activity {
 
     private LinearLayout savesCard() {
         LinearLayout c = ui.card();
-        c.addView(ui.section("SAVES"));
+        c.addView(ui.section("Saves"));
         c.addView(ui.summary("Save slots live in the game folder (saves/). Under Android/data they are removed with "
                 + "the app: back up first."));
         mSlotList = ui.column();
@@ -605,7 +606,7 @@ public class LauncherActivity extends Activity {
     }
 
     private LinearLayout controlsCard() {
-        LinearLayout c = category("CONTROLS");
+        LinearLayout c = category("Controls");
         c.addView(ui.segmented("Control mode", "MOBILE: steering, pedals, nitrous, e-brake, Speedbreaker; in the game's "
                 + "menus, its buttons. XBOX: the whole Xbox controller.",
                 new String[] {"MOBILE", "XBOX"}, new int[] {Settings.MODE_MOBILE, Settings.MODE_XBOX},
@@ -671,7 +672,7 @@ public class LauncherActivity extends Activity {
     }
 
     private LinearLayout systemCard() {
-        LinearLayout c = category("SYSTEM");
+        LinearLayout c = category("System");
         c.addView(ui.segmented("Language (next start)", "The recompilation's own text and prompts. Indonesian also "
                 + "translates the game's menus.",
                 new String[] {"English", "Indonesian"}, new int[] {0, 1},
@@ -702,7 +703,7 @@ public class LauncherActivity extends Activity {
     private LinearLayout cheatsCard() {
         LinearLayout c = ui.card();
         c.setBackground(ui.box(UiKit.CARD, CHEATS_ORANGE, 14));
-        TextView head = ui.section("CHEATS");
+        TextView head = ui.section("Cheats");
         head.setTextColor(CHEATS_ORANGE);
         c.addView(head);
         c.addView(ui.summary("A slot played with a cheat on is tagged CHEATS ON in SAVES."));

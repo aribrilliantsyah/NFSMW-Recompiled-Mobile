@@ -144,7 +144,7 @@ public class GameActivity extends SDLActivity {
             col.removeAllViews();
             TomlSettings t = Settings.nativeSettings(this);
             int mode = Settings.padMode(t), steer = Settings.steer(t);
-            col.addView(ui.section("TOUCH CONTROLS"));
+            col.addView(ui.section("Touch controls"));
             col.addView(ui.segmented("Layout", null, new String[] {"MOBILE", "XBOX"},
                     new int[] {Settings.MODE_MOBILE, Settings.MODE_XBOX}, mode, v -> {
                         mPad.setControl(f -> Settings.putPadMode(f, v));
@@ -178,7 +178,7 @@ public class GameActivity extends SDLActivity {
         fill[0].run();
         android.widget.LinearLayout foot = ui.column();
         foot.setPadding(ui.dp(18), ui.dp(4), ui.dp(18), ui.dp(14));
-        foot.addView(ui.section("GAME"));
+        foot.addView(ui.section("Game"));
         android.widget.LinearLayout game = new android.widget.LinearLayout(this);
         game.addView(ui.secondary("Resume", v -> dlg[0].dismiss()),
                 new android.widget.LinearLayout.LayoutParams(0, -2, 1f));

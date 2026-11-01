@@ -1227,7 +1227,9 @@ public final class TouchControllerView extends View {
 
     // ------------------------------------------------------- in-game settings
 
-    private static final String[] STEER_NAMES = {"STICK", "ARROWS", "TILT", "WHEEL"};
+    // the Configuration menu's values, sentence case (src/common/settings_rows.cpp's kSteerNames); XBOX and MOBILE are
+    // the modes' names and stay as they are
+    private static final String[] STEER_NAMES = {"Stick", "Arrows", "Tilt", "Wheel"};
 
     /** The game's CONTROLS rows (src/common/settings_rows.cpp, GameActivity.settingsRow), UI thread: 0 mode,
      *  1 steering, 2 tilt sensitivity, 3 opacity, 4 size (every control of the mode); step changes it and saves. Each
