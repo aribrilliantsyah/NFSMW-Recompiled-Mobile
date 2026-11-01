@@ -48,6 +48,8 @@ public class GameActivity extends SDLActivity {
     /** The ☰ card: true as it opens (a race with no menu up pauses), false on its Resume; that START only if the
      *  card's paused the race (src/game/settings_menu.cpp). */
     static native void nativeCardPause(boolean pause);
+    /** Back in front: the game reads the HUD editor's keys from the settings file again (native/activity.cpp). */
+    static native void nativeReloadHud();
     // A controller some phones' game services pass on as a virtual device (MIUI's took a DualShock 4 on a Redmi
     // Note 8 Pro): SDL sees no controller in it and drops its input. Its buttons and sticks go to port 0 here.
     private static native void nativeLooseKey(int keyCode, boolean down);
@@ -120,6 +122,7 @@ public class GameActivity extends SDLActivity {
     protected void onResume() {
         super.onResume();
         if (mPad != null) mPad.onPauseResume(true);
+        if (!mBrokenLibraries) nativeReloadHud();  // the HUD editor (its own process) may have changed the HUD
     }
 
     /** The ☰: a floating card over a dimmed game (the touch controls' settings: mode, MOBILE's steering, tilt,
@@ -168,10 +171,10 @@ public class GameActivity extends SDLActivity {
             edits.addView(ui.secondary("Edit buttons", v -> { resume[0] = false; dlg[0].dismiss(); mPad.openEditor(); }), half);
             android.widget.LinearLayout.LayoutParams half2 = new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
             half2.leftMargin = ui.dp(8);
-            edits.addView(ui.secondary("Edit HUD (next start)", v -> {
+            edits.addView(ui.secondary("Edit HUD", v -> {
                 resume[0] = false;
                 dlg[0].dismiss();
-                startActivity(new Intent(this, HudEditorActivity.class));
+                openHudEditor(true);
             }), half2);
             col.addView(edits);
         };
@@ -229,6 +232,14 @@ public class GameActivity extends SDLActivity {
         });
         nativeCardPause(true);
         dlg[0].show();
+    }
+
+    /** The HUD editor over the game. From the ☰ card (paused already by it) or the game's HUD row (fromCard false):
+     *  a race with no menu up is paused first, so the HUD stands still behind the editor; the player resumes from the
+     *  pause menu after, and the HUD's new places apply as the game comes back in front (onResume). */
+    void openHudEditor(boolean fromCard) {
+        if (!fromCard) nativeCardPause(true);
+        startActivity(new Intent(this, HudEditorActivity.class).putExtra(HudEditorActivity.EXTRA_OVER_GAME, true));
     }
 
     private void exitToLauncher() {
@@ -315,7 +326,7 @@ public class GameActivity extends SDLActivity {
         if (row >= 5) {
             if (step != 0) a.runOnUiThread(() -> {
                 if (row == 5) a.mPad.openEditor();
-                else a.startActivity(new Intent(a, HudEditorActivity.class));
+                else a.openHudEditor(false);
             });
             return "";
         }

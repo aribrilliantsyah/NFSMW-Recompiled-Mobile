@@ -1,4 +1,4 @@
-# Draws the settings menu's six category icons and the menus' SETTINGS icon (64x64 ARGB) into src/game/category_icons.inc.
+# Draws the settings menu's category icons and the menus' SETTINGS icon (64x64 ARGB) into src/game/category_icons.inc.
 # 24-unit grid, 2-unit stroke, round caps/joins. White on transparent, except CHEATS (orange #F28C1C).
 # Icons are new drawings, not Rangga's gears-with-subject style. Every one is strokes alone (poly, circle, rrect):
 # one width, round ends and corners, nothing filled.
@@ -109,6 +109,17 @@ def icon_controls():
     return img
 
 
+# ---- HUD: a screen's frame, a small map in its corner and a gauge's arc in the other ----
+def icon_hud():
+    img, d = icon_canvas()
+    rrect(d, 2, 4, 22, 20, 2.5)
+    circle(d, 7.5, 14.5, 2.5)
+    poly(d, arc_pts(16.5, 16, 3.5, 180, 360))
+    poly(d, [(16.5, 16), (18.5, 13.5)])
+    poly(d, [(6, 8), (11, 8)])
+    return img
+
+
 # ---- System: a cog ----
 def icon_system():
     img, d = icon_canvas()
@@ -143,6 +154,7 @@ ICONS = [
     ("Speed", icon_speed, None),
     ("Visuals", icon_visuals, None),
     ("Controls", icon_controls, None),
+    ("HUD", icon_hud, None),
     ("System", icon_system, None),
     ("Cheats", icon_cheats, ORANGE),
     ("Settings", icon_settings, None),
@@ -172,7 +184,7 @@ def write_rows(f, pixels, indent):
 
 
 def write_inc(icons_data):
-    """kIcons: the six categories', in settings::Category order; kSettingsIcon: the menus' SETTINGS."""
+    """kIcons: the categories', in settings::Category order; kSettingsIcon: the menus' SETTINGS."""
     categories, settings = icons_data[:-1], icons_data[-1]
     with open(OUT, "w") as f:
         f.write("// written by tools/category_icons.py, do not edit\n")

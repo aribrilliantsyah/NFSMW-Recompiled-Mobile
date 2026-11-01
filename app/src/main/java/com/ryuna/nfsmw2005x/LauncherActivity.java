@@ -46,9 +46,9 @@ public class LauncherActivity extends Activity {
     private TextView mPlayHint;
     /** The tabs: the in-game menu's categories (settings::Name) in its order, then the launcher's SAVES. */
     // sentence case, as the game's Configuration menu names them (src/common/settings_rows.cpp's Name)
-    private static final String[] TABS = {"Screen", "Speed", "Visuals", "Controls", "System", "Cheats", "Saves"};
-    private static final int T_SCREEN = 0, T_SPEED = 1, T_VISUALS = 2, T_CONTROLS = 3, T_SYSTEM = 4, T_CHEATS = 5,
-            T_SAVES = 6;
+    private static final String[] TABS = {"Screen", "Speed", "Visuals", "Controls", "HUD", "System", "Cheats", "Saves"};
+    private static final int T_SCREEN = 0, T_SPEED = 1, T_VISUALS = 2, T_CONTROLS = 3, T_HUD = 4, T_SYSTEM = 5,
+            T_CHEATS = 6, T_SAVES = 7;
     private int mTab;
     private LinearLayout mTabBar, mTabBody, mPresetRow;
     private volatile boolean mCancelExtract;
@@ -185,6 +185,7 @@ public class LauncherActivity extends Activity {
             case T_SPEED: mTabBody.addView(speedCard()); break;
             case T_VISUALS: mTabBody.addView(visualsCard()); break;
             case T_CONTROLS: mTabBody.addView(controlsCard()); break;
+            case T_HUD: mTabBody.addView(hudCard()); break;
             case T_SYSTEM: mTabBody.addView(systemCard()); break;
             case T_CHEATS: mTabBody.addView(cheatsCard()); break;
             default: mTabBody.addView(savesCard());
@@ -235,15 +236,6 @@ public class LauncherActivity extends Activity {
                 num(Settings.K_FPS_CAP, 60), v -> put(Settings.K_FPS_CAP, v)));
         c.addView(ui.toggle("V-Sync", "Waits for the screen's refresh: no tearing, a little more latency.",
                 flag(Settings.K_VSYNC, false), v -> put(Settings.K_VSYNC, v)));
-        c.addView(ui.toggle("FPS counter", "Frames per second in a corner of the game.",
-                flag(Settings.K_FPS, false), v -> put(Settings.K_FPS, v)));
-        c.addView(ui.choice("Counter position", null,
-                new String[] {"Top center", "Top left", "Top right", "Bottom left", "Bottom center", "Bottom right"},
-                new int[] {0, 1, 2, 3, 4, 5}, num(Settings.K_FPS_POS, 0), v -> put(Settings.K_FPS_POS, v)));
-        c.addView(ui.toggle("CPU/GPU usage", "On the FPS counter.", flag(Settings.K_FPS_USAGE, true),
-                v -> put(Settings.K_FPS_USAGE, v)));
-        c.addView(ui.toggle("Temperatures", "On the FPS counter.", flag(Settings.K_FPS_TEMPS, true),
-                v -> put(Settings.K_FPS_TEMPS, v)));
         c.addView(ui.toggle("Shader preloading (next start)", "Builds the shaders of earlier runs at the start: fewer "
                 + "stutters the first minutes.", flag(Settings.K_PRELOAD, false), v -> put(Settings.K_PRELOAD, v)));
         // the launcher's own: not in the game's menu
@@ -631,8 +623,6 @@ public class LauncherActivity extends Activity {
                 s -> look(mode, false, s)));
         c.addView(ui.gap(6));
         c.addView(ui.secondary("Edit buttons", v -> startActivity(new Intent(this, EditorActivity.class))));
-        c.addView(ui.gap(6));
-        c.addView(ui.secondary("Edit HUD (next start)", v -> startActivity(new Intent(this, HudEditorActivity.class))));
         // the launcher's own: not in the game's menu
         c.addView(ui.toggle("On-screen controller", null, mPrefs.getBoolean(Settings.K_PAD, true),
                 v -> pref(Settings.K_PAD, v)));
@@ -650,6 +640,36 @@ public class LauncherActivity extends Activity {
         c.addView(mPadStatus);
         c.addView(ui.gap(6));
         c.addView(ui.secondary("Controller mapping", v -> startActivity(new Intent(this, GamepadMapActivity.class))));
+        return c;
+    }
+
+    /** HUD: the game's HUD items and the FPS counter, as the game's HUD category has them; the editor moves them, the
+     *  game reads its keys again as it comes back in front (GameActivity.nativeReloadHud). */
+    private LinearLayout hudCard() {
+        LinearLayout c = category("HUD");
+        c.addView(ui.secondary("Edit HUD", v -> startActivity(new Intent(this, HudEditorActivity.class))));
+        c.addView(ui.gap(6));
+        c.addView(ui.secondary("Reset HUD", v -> {
+            update(Settings::resetHud);
+            showTab(mTab);
+        }));
+        c.addView(ui.gap(10));
+        for (int i = 0; i < Settings.HUD_IDS.length; i++) {
+            final String key = Settings.hudKey(i, "shown");
+            c.addView(ui.toggle(Settings.HUD_LABELS[i], i == 0 ? "Off: the item is not drawn in races." : null,
+                    flag(key, true), v -> put(key, v)));
+        }
+        c.addView(ui.toggle("FPS counter", "Frames per second over the game; Edit HUD moves and sizes it.",
+                flag(Settings.K_FPS, false), v -> put(Settings.K_FPS, v)));
+        c.addView(ui.choice("Counter position", "Custom is where Edit HUD left it.",
+                new String[] {"Top center", "Top left", "Top right", "Bottom left", "Bottom center", "Bottom right",
+                              "Custom"},
+                new int[] {0, 1, 2, 3, 4, 5, Settings.FPS_CUSTOM}, num(Settings.K_FPS_POS, 0),
+                v -> put(Settings.K_FPS_POS, v)));
+        c.addView(ui.toggle("CPU/GPU usage", "On the FPS counter.", flag(Settings.K_FPS_USAGE, true),
+                v -> put(Settings.K_FPS_USAGE, v)));
+        c.addView(ui.toggle("Temperatures", "On the FPS counter.", flag(Settings.K_FPS_TEMPS, true),
+                v -> put(Settings.K_FPS_TEMPS, v)));
         return c;
     }
 

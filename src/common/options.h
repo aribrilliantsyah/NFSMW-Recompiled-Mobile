@@ -22,11 +22,26 @@ inline constexpr uint32_t kAaOff = 0, kAaFxaa = 1, kAaSsaa = 2;
 inline constexpr uint32_t kMaxCash = 9999999;  // the cash cheats' top, the most the career's counter shows
 inline constexpr int64_t kNoCash = -1;         // no set cash pending
 
+// the FPS counter's places (Options::fps_position): the six fixed ones, then kFpsCustom, the HUD editor's drag
+// (fps_x, fps_y)
+enum FpsPosition : uint32_t {
+    kFpsTop, kFpsTopLeft, kFpsTopRight, kFpsBottomLeft, kFpsBottom, kFpsBottomRight, kFpsCustom, kFpsPositionCount
+};
+inline constexpr uint32_t kFpsScaleMin = 50, kFpsScaleMax = 200;
+
 struct Options {
     bool fps_counter = false;
-    uint32_t fps_position = 0;  // the counter's place, src/common/menu.cpp's kFpsPositionNames
+    uint32_t fps_position = 0;  // the counter's place, src/common/menu.cpp's kFpsPositionNames; kFpsCustom: fps_x, fps_y
     bool fps_usage = true;      // the counter's CPU and GPU load
     bool fps_temps = true;      // the counter's CPU, GPU and battery temperatures
+    // the HUD editor's (HudEditorActivity): the counter's middle in thousandths of the screen, its size in percent.
+    // Integers in the settings file, as the launcher's TOML reader takes them (TomlSettings: bools, integers, strings)
+    uint32_t fps_x = 500, fps_y = 120;
+    uint32_t fps_scale = 100;
+    // the game's HUD items (common/hud_layout.h's HudItem order): each moved by whole FEng units (480 to the frame's
+    // height) from where the game puts it, and shown or hidden; src/game/hud_layout.cpp applies them
+    int32_t hud_x[4] = {}, hud_y[4] = {};
+    bool hud_shown[4] = {true, true, true, true};
     uint32_t screen_filter = 0;  // the present's look: 0 none, 1 sharpen, 2 vivid, 3 scanlines, 4 CRT, 5 HDR
     uint32_t anti_aliasing = 0;  // kAaOff, kAaFxaa or kAaSsaa
     uint32_t aspect_ratio = 0;  // the frame's shape in hundredths (133 is 4:3), 0 the whole screen; common/aspect.h

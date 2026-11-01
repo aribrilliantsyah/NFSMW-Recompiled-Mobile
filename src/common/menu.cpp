@@ -21,9 +21,6 @@ namespace app {
 
 namespace {
 
-// the counter's place on the screen, Options::fps_position (Settings.java's FPS position)
-enum FpsPosition : uint32_t { kFpsTop, kFpsTopLeft, kFpsTopRight, kFpsBottomLeft, kFpsBottom, kFpsBottomRight };
-
 // the window's display's refresh rate, 0 when unreadable
 uint32_t RefreshRate() {
     SDL_Window* w = static_cast<SDL_Window*>(Window());
@@ -77,7 +74,8 @@ void DrawFpsCounter(double fps) {
 
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     ImFont* font = ImGui::GetFont();
-    float font_size = ImGui::GetFontSize();
+    // the HUD editor's size: every measure of the pill follows the font's
+    float font_size = ImGui::GetFontSize() * std::clamp(o.fps_scale, game::kFpsScaleMin, game::kFpsScaleMax) / 100.0f;
     float big = font_size * 1.35f, small = font_size * 0.95f;
 
     ImVec2 num_sz = font->CalcTextSizeA(big, FLT_MAX, 0, num_text);
@@ -105,6 +103,7 @@ void DrawFpsCounter(double fps) {
     ImVec2 screen = ImGui::GetIO().DisplaySize;
     float margin = screen.y * 0.03f;
     uint32_t pos = o.fps_position;
+    using namespace game;
     bool bottom = pos == kFpsBottomLeft || pos == kFpsBottom || pos == kFpsBottomRight;
     float y = bottom ? screen.y - margin - pill_h : margin;
     // Top sits under the touch overlay's top row (TouchControllerView: BACK/☰/START centred at 0.07 of the height,
@@ -113,6 +112,11 @@ void DrawFpsCounter(double fps) {
     if (pos == kFpsTop) y = screen.y * 0.07f + 0.35f * std::min(screen.x / 16.0f, screen.y / 9.0f) + margin * 0.5f;
     float x = (pos == kFpsTopLeft || pos == kFpsBottomLeft) ? margin :
               ((pos == kFpsTopRight || pos == kFpsBottomRight) ? screen.x - margin - pill_w : (screen.x - pill_w) * 0.5f);
+    // the HUD editor's drag: its middle where it was left, kept on the screen
+    if (pos == kFpsCustom) {
+        x = std::clamp(o.fps_x / 1000.0f * screen.x - pill_w * 0.5f, 0.0f, std::max(0.0f, screen.x - pill_w));
+        y = std::clamp(o.fps_y / 1000.0f * screen.y - pill_h * 0.5f, 0.0f, std::max(0.0f, screen.y - pill_h));
+    }
 
     // Pill background and border
     ImVec2 p_min(x, y), p_max(x + pill_w, y + pill_h);

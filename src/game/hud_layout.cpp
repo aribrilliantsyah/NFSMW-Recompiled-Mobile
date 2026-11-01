@@ -1,11 +1,14 @@
-// The HUD's speedometer, minimap, race information and EA Trax banner moved where the touch layout editor puts them,
-// out from under the touch controls. A race's HUD is the FEng package HUD_SingleRace.fng (HUD_Drag.fng and the split
-// screen's are others), the song's banner EA_TRAX.fng; their pieces are groups found by their names' hashes
-// (FEHashUpper, 0x157E40: -1, then times 33 plus each letter in capitals, the object's at +0x10). An object's place is its data's (+0x2C) x and y at +0x1C and +0x20, FEng units from its group's
-// middle, read as it is drawn: a group moved moves what is in it. The game writes some of those places each frame
-// (Hud_Minimap scrolls TRACK_MAP) and the package's scripts others, so they are moved after FEngine::Update, the last
-// writer before the drawing (at the present, the map's roads stayed behind); and a place found other than as it was
-// left is the game's new one, moved again from there
+// The HUD's speedometer, minimap, race information and EA Trax banner moved and shown or hidden as the HUD editor and
+// the HUD category leave them (Options' hud_*, src/common/game_info.cpp), out from under the touch controls. A race's
+// HUD is the FEng package HUD_SingleRace.fng (HUD_Drag.fng and the split screen's are others), the song's banner
+// EA_TRAX.fng; their pieces are groups found by their names' hashes (FEHashUpper, 0x157E40: -1, then times 33 plus each
+// letter in capitals, the object's at +0x10). An object's place is its data's (+0x2C) x and y at +0x1C and +0x20, FEng
+// units from its group's middle, read as it is drawn: a group moved moves what is in it. The game writes some of those
+// places each frame (Hud_Minimap scrolls TRACK_MAP) and the package's scripts others, so they are moved after
+// FEngine::Update, the last writer before the drawing (at the present, the map's roads stayed behind); and a place
+// found other than as it was left is the game's new one, moved again from there. A hidden item's pieces get FEng's
+// hidden flag (the object's +0x1C bit 0, which the drawing and fe_mouse.cpp skip); the game sets and clears that flag
+// itself too (the minimap in some pursuits), so only a flag of ours is cleared when the item shows again
 #include <cstring>
 #include <unordered_map>
 
@@ -13,6 +16,7 @@
 #include "cpu/x86_ops.h"
 #include "kernel/kernel.h"
 #include "kernel/memory.h"
+#include "common/options.h"
 
 namespace game {
 
@@ -21,7 +25,8 @@ namespace {
 constexpr uint32_t kFEng = 0x48E94C;           // cFEng's instance, its first field the FEngine
 constexpr uint32_t kFirstPackage = 0xE0;       // FEngine's
 constexpr uint32_t kPackageNext = 0x4, kPackageName = 0xC, kPackageObjects = 0x4C;
-constexpr uint32_t kObjectNext = 0x4, kObjectHash = 0x10, kObjectType = 0x18, kObjectData = 0x2C;
+constexpr uint32_t kObjectNext = 0x4, kObjectHash = 0x10, kObjectType = 0x18, kObjectFlags = 0x1C, kObjectData = 0x2C;
+constexpr uint32_t kObjectHidden = 1;
 constexpr uint32_t kGroupCount = 0x60, kGroupObjects = 0x64;
 constexpr uint32_t kTypeGroup = 5;
 constexpr uint32_t kDataX = 0x1C, kDataY = 0x20;
@@ -60,6 +65,8 @@ struct Moved {
     float set_x, set_y;    // what was written over it
 };
 std::unordered_map<uint32_t, Moved> g_moved;  // by the object's data
+// the objects whose hidden flag is ours (set for a hidden item), by the object: cleared again when it shows
+std::unordered_map<uint32_t, bool> g_hid;
 
 uint32_t Peek(uint32_t va) { return va && mem::IsCommitted(va) && mem::IsCommitted(va + 3) ? kernel::R32(va) : 0; }
 
@@ -77,26 +84,47 @@ void SetFloat(uint32_t va, float f) {
 
 void Move(uint32_t data, HudItem item, std::unordered_map<uint32_t, Moved>& seen) {
     if (!data || !mem::IsCommitted(data) || !mem::IsCommitted(data + kDataY + 3)) return;
+    const Options& o = Opt();
     float x = Float(data + kDataX), y = Float(data + kDataY);
     Moved m{x, y, x, y};
     if (auto it = g_moved.find(data); it != g_moved.end() && it->second.set_x == x && it->second.set_y == y) m = it->second;
-    m.set_x = m.x + g_hud_x[item].load();
-    m.set_y = m.y + g_hud_y[item].load();
+    m.set_x = m.x + float(o.hud_x[item]);
+    m.set_y = m.y + float(o.hud_y[item]);
     if (m.set_x != x) SetFloat(data + kDataX, m.set_x);
     if (m.set_y != y) SetFloat(data + kDataY, m.set_y);
     seen[data] = m;
 }
 
-void Walk(uint32_t first, int count, int& budget, std::unordered_map<uint32_t, Moved>& seen) {
+// a hidden item's piece gets the hidden flag, remembered as ours while it is set; a piece the game hid itself before
+// it is not ours, and when the item shows again only a flag of ours is cleared
+void Show(uint32_t object, HudItem item, std::unordered_map<uint32_t, bool>& hid) {
+    if (!mem::IsCommitted(object + kObjectFlags + 3)) return;
+    uint32_t flags = kernel::R32(object + kObjectFlags);
+    bool ours = g_hid.count(object) != 0;
+    if (!Opt().hud_shown[item]) {
+        if (!(flags & kObjectHidden)) {
+            kernel::W32(object + kObjectFlags, flags | kObjectHidden);
+            ours = true;
+        }
+        if (ours) hid[object] = true;
+    } else if (ours && (flags & kObjectHidden)) {
+        kernel::W32(object + kObjectFlags, flags & ~kObjectHidden);
+    }
+}
+
+void Walk(uint32_t first, int count, int& budget, std::unordered_map<uint32_t, Moved>& seen,
+          std::unordered_map<uint32_t, bool>& hid) {
     for (uint32_t o = first; o && budget-- > 0 && count != 0; o = Peek(o + kObjectNext), count--) {
         uint32_t hash = Peek(o + kObjectHash);
         bool piece = false;
         for (const Piece& p : kPieces)
             if (p.hash == hash) {
                 Move(Peek(o + kObjectData), p.item, seen);
+                Show(o, p.item, hid);
                 piece = true;
             }
-        if (!piece && Peek(o + kObjectType) == kTypeGroup) Walk(Peek(o + kGroupObjects), int(Peek(o + kGroupCount)), budget, seen);
+        if (!piece && Peek(o + kObjectType) == kTypeGroup)
+            Walk(Peek(o + kGroupObjects), int(Peek(o + kGroupCount)), budget, seen, hid);
     }
 }
 
@@ -110,15 +138,18 @@ bool HudPackage(uint32_t p) {
 }  // namespace
 
 void ApplyHudLayout() {
+    ReloadHudIfAsked();
     uint32_t feng = Peek(kFEng), fe = Peek(feng);
     std::unordered_map<uint32_t, Moved> seen;
+    std::unordered_map<uint32_t, bool> hid;
     int n = 0;
     for (uint32_t p = fe ? Peek(fe + kFirstPackage) : 0; p && n < kMaxPackages; p = Peek(p + kPackageNext), n++) {
         if (!HudPackage(p)) continue;
         int budget = kMaxObjects;
-        Walk(Peek(p + kPackageObjects), -1, budget, seen);
+        Walk(Peek(p + kPackageObjects), -1, budget, seen, hid);
     }
     g_moved.swap(seen);  // a package gone forgets its objects
+    g_hid.swap(hid);
 }
 
 void SettingsTick(X86Context& ctx);  // settings_menu.cpp: the ☰'s request opens once a menu is up

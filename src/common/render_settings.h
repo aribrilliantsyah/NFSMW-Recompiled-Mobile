@@ -25,6 +25,8 @@ struct RenderSettings {
     uint32_t fps_position = 0;
     bool fps_usage = true;
     bool fps_temps = true;
+    uint32_t fps_x = 500, fps_y = 120;  // kFpsCustom's middle, thousandths of the screen
+    uint32_t fps_scale = 100;
     // game::Aspect(), the frame's shape as the presenter letterboxes it
     float aspect = 16.0f / 9.0f;
 };

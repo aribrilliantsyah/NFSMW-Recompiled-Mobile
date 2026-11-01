@@ -1,4 +1,4 @@
-// the six categories' rows, their values, stepping and apply: what the in-game settings menu shows
+// the seven categories' rows, their values, stepping and apply: what the in-game settings menu shows
 // (src/game/settings_menu.cpp). Each row reads and writes Options or app::Settings, and a step saves at once through
 // app::Save; the overlay's rows are the launcher shell's (host::ShellRow). Game thread.
 #include "common/settings_rows.h"
@@ -19,6 +19,7 @@
 #include "audio/output.h"
 #include "build_info.h"
 #include "common/aspect.h"
+#include "common/hud_layout.h"
 #include "common/menu.h"
 #include "common/options.h"
 #include "common/settings_file.h"
@@ -67,14 +68,19 @@ std::string OnOff(bool v) { return v ? "On" : "Off"; }
 // SCREEN
 enum : int { kWidescreen, kAspectRatio, kRenderRes, kScreenFilter, kYellowFilter };
 // SPEED
-enum : int { kPreset = 100, kFpsCap, kVSync, kFpsCounter, kCounterPos, kCpuGpu, kTemps, kShaderPreload };
+enum : int { kPreset = 100, kFpsCap, kVSync, kShaderPreload };
 // VISUALS
 enum : int {
     kBloom = 200, kFog, kMotionBlur, kCarReflections, kRoadReflections, kShadows,
     kParticles, kFallingRain, kScreenRaindrops, kAntiAliasing, kAnisotropic
 };
 // CONTROLS
-enum : int { kControlMode = 300, kSteering, kTiltSens, kOpacity, kSize, kEditButtons, kEditHud };
+enum : int { kControlMode = 300, kSteering, kTiltSens, kOpacity, kSize, kEditButtons };
+// HUD: the game's HUD items' switches, the FPS counter's rows, the HUD editor
+enum : int {
+    kEditHud = 600, kResetHud, kShowSpeedometer, kShowMinimap, kShowRaceInfo, kShowTrax, kFpsCounter, kCounterPos, kCpuGpu,
+    kTemps
+};
 // SYSTEM
 enum : int { kLanguage = 400, kAudioOutput, kSkipMovies, kActiveSave, kAbout };
 // CHEATS
@@ -127,50 +133,50 @@ constexpr int kLanguageCount = int(std::size(game::kLanguages));
 const char* const kModeNames[] = {"XBOX", "MOBILE"};
 const char* const kSteerNames[] = {"Stick", "Arrows", "Tilt", "Wheel"};
 
-enum FpsPosition : uint32_t { kFpsTop, kFpsTopLeft, kFpsTopRight, kFpsBottomLeft, kFpsBottom, kFpsBottomRight };
+using game::kFpsTop, game::kFpsTopLeft, game::kFpsTopRight, game::kFpsBottomLeft, game::kFpsBottom,
+    game::kFpsBottomRight, game::kFpsCustom;
+// the fixed places a step goes through; the HUD editor's drag (kFpsCustom) shows as Custom, a step leaves it
 constexpr uint32_t kFpsPositions[] = {kFpsTop, kFpsTopLeft, kFpsTopRight, kFpsBottomLeft, kFpsBottom, kFpsBottomRight};
-const char* const kFpsPositionNames[] = {"Top center", "Top left", "Top right", "Bottom left", "Bottom center", "Bottom right"};
+const char* const kFpsPositionNames[] = {"Top center", "Top left", "Top right", "Bottom left", "Bottom center",
+                                         "Bottom right", "Custom"};
 
 // ---- presets ----
 
-// A preset is the whole state of the rows it covers: render resolution, every SPEED row and every VISUALS row. The rows
-// as they are match one exactly, or the preset shows Custom (a row changed by hand, here or in the launcher)
+// A preset is the whole state of the rows it covers: render resolution, every SPEED row and every VISUALS row (the FPS
+// counter's are the HUD category's, which a preset leaves alone). The rows as they are match one exactly, or the
+// preset shows Custom (a row changed by hand, here or in the launcher)
 enum Preset { kSaver, kBalanced, kMax, kCustom };
 constexpr int kPresetCount = 3;
 
 struct PresetState {
     uint32_t render_percent, fps_cap;
-    bool vsync, fps_counter;
-    uint32_t fps_position;
-    bool fps_usage, fps_temps, shader_preload;
+    bool vsync, shader_preload;
     bool bloom, fog, motion_blur;
     uint32_t reflections;  // the cars': 0 every frame, 1 every 2nd, 3 off
     bool road_reflections, shadows, particles, rain, rain_drops;
     uint32_t anti_aliasing, aniso;
 };
 constexpr PresetState kPresets[kPresetCount] = {
-    // each: no FPS counter (its rows as they come), shaders preloaded (no stutter on a new one)
+    // each: shaders preloaded (no stutter on a new one)
     // Saver: half the resolution, 30 fps, no V-Sync, no reflections, motion blur or particles
-    {50, 30, false, false, 0, true, true, true, true, true, false, 3, false, true, false, true, true, game::kAaOff, 0},
+    {50, 30, false, true, true, true, false, 3, false, true, false, true, true, game::kAaOff, 0},
     // Balanced: two thirds, 60 fps, no V-Sync, the cars' reflections every 2nd frame
-    {67, 60, false, false, 0, true, true, true, true, true, true, 1, true, true, true, true, true, game::kAaOff, 0},
+    {67, 60, false, true, true, true, true, 1, true, true, true, true, true, game::kAaOff, 0},
     // Max: the full resolution, no cap, V-Sync, everything on
-    {100, 0, true, false, 0, true, true, true, true, true, true, 0, true, true, true, true, true, game::kAaSsaa, 16},
+    {100, 0, true, true, true, true, true, 0, true, true, true, true, true, game::kAaSsaa, 16},
 };
 const char* const kPresetNames[] = {"Saver", "Balanced", "Max", "Custom"};
 
 PresetState Current() {
     const game::Options& o = game::Opt();
     const app::Settings& s = app::Get();
-    return {s.render_percent, s.fps_cap, s.vsync, o.fps_counter, o.fps_position, o.fps_usage, o.fps_temps,
-            o.shader_preload, o.bloom, o.fog, o.motion_blur, o.reflections, o.road_reflections, o.shadows,
-            o.particles, o.rain, o.rain_drops, o.anti_aliasing, s.aniso};
+    return {s.render_percent, s.fps_cap, s.vsync, o.shader_preload, o.bloom, o.fog, o.motion_blur, o.reflections,
+            o.road_reflections, o.shadows, o.particles, o.rain, o.rain_drops, o.anti_aliasing, s.aniso};
 }
 
 bool Same(const PresetState& a, const PresetState& b) {
     return a.render_percent == b.render_percent && a.fps_cap == b.fps_cap && a.vsync == b.vsync &&
-           a.fps_counter == b.fps_counter && a.fps_position == b.fps_position && a.fps_usage == b.fps_usage &&
-           a.fps_temps == b.fps_temps && a.shader_preload == b.shader_preload && a.bloom == b.bloom && a.fog == b.fog &&
+           a.shader_preload == b.shader_preload && a.bloom == b.bloom && a.fog == b.fog &&
            a.motion_blur == b.motion_blur && a.reflections == b.reflections &&
            a.road_reflections == b.road_reflections && a.shadows == b.shadows && a.particles == b.particles &&
            a.rain == b.rain && a.rain_drops == b.rain_drops && a.anti_aliasing == b.anti_aliasing && a.aniso == b.aniso;
@@ -189,15 +195,14 @@ void ApplyPreset(Preset p) {
     game::Options& o = game::Opt();
     app::Settings& s = app::Get();
     s.render_percent = d.render_percent, s.fps_cap = d.fps_cap, s.vsync = d.vsync, s.aniso = d.aniso;
-    o.fps_counter = d.fps_counter, o.fps_position = d.fps_position, o.fps_usage = d.fps_usage;
-    o.fps_temps = d.fps_temps, o.shader_preload = d.shader_preload;
+    o.shader_preload = d.shader_preload;
     o.bloom = d.bloom, o.fog = d.fog, o.motion_blur = d.motion_blur, o.reflections = d.reflections;
     o.road_reflections = d.road_reflections, o.shadows = d.shadows, o.particles = d.particles;
     o.rain = d.rain, o.rain_drops = d.rain_drops, o.anti_aliasing = d.anti_aliasing;
     // every key the preset sets is saved, a value it shares with the run's start too (the launcher may differ)
-    for (const char* key : {"render_percent", "fps_cap", "vsync", "anisotropic_filtering", "fps_counter", "fps_position",
-                            "fps_usage", "fps_temps", "shader_preload", "bloom", "fog", "motion_blur", "car_reflections",
-                            "road_reflections", "shadows", "particles", "rain", "rain_drops", "anti_aliasing"})
+    for (const char* key : {"render_percent", "fps_cap", "vsync", "anisotropic_filtering", "shader_preload", "bloom",
+                            "fog", "motion_blur", "car_reflections", "road_reflections", "shadows", "particles", "rain",
+                            "rain_drops", "anti_aliasing"})
         game::TouchSetting(key);
 }
 
@@ -253,10 +258,6 @@ const std::vector<Row> kSpeedRows = {
     {Kind::Choice, kPreset, "Preset"},
     {Kind::Choice, kFpsCap, "FPS cap"},
     {Kind::Toggle, kVSync, "V-Sync"},
-    {Kind::Toggle, kFpsCounter, "FPS counter"},
-    {Kind::Choice, kCounterPos, "Counter position"},
-    {Kind::Toggle, kCpuGpu, "CPU/GPU usage"},
-    {Kind::Toggle, kTemps, "Temperatures"},
     {Kind::Toggle, kShaderPreload, "Shader preloading (next start)"},
 };
 
@@ -281,7 +282,19 @@ const std::vector<Row> kControlsRows = {
     {Kind::Number, kOpacity, "Opacity"},
     {Kind::Number, kSize, "Size"},
     {Kind::Action, kEditButtons, "Edit buttons"},
-    {Kind::Action, kEditHud, "Edit HUD (next start)"},
+};
+
+const std::vector<Row> kHudRows = {
+    {Kind::Action, kEditHud, "Edit HUD"},
+    {Kind::Action, kResetHud, "Reset HUD"},
+    {Kind::Toggle, kShowSpeedometer, "Speedometer"},
+    {Kind::Toggle, kShowMinimap, "Minimap"},
+    {Kind::Toggle, kShowRaceInfo, "Race info"},
+    {Kind::Toggle, kShowTrax, "EA Trax"},
+    {Kind::Toggle, kFpsCounter, "FPS counter"},
+    {Kind::Choice, kCounterPos, "Counter position"},
+    {Kind::Toggle, kCpuGpu, "CPU/GPU usage"},
+    {Kind::Toggle, kTemps, "Temperatures"},
 };
 
 const std::vector<Row> kSystemRows = {
@@ -400,6 +413,7 @@ const std::vector<Row>& Rows(Category cat) {
         case kSpeed: return kSpeedRows;
         case kVisuals: return kVisualsRows;
         case kControls: return kControlsRows;
+        case kHud: return kHudRows;
         case kSystem: return kSystemRows;
         case kCheats: return kCheatsRows;
         default: return empty;
@@ -459,15 +473,36 @@ std::string Value(const Row& r, int step) {
             return FpsCapName(s.fps_cap);
         }
         case kVSync: return toggle(s.vsync);
+        case kShaderPreload: return toggle(o.shader_preload);
+
+        // HUD: src/game/hud_layout.cpp hides and shows the game's items at once, src/common/menu.cpp the counter
+        case kShowSpeedometer:
+        case kShowMinimap:
+        case kShowRaceInfo:
+        case kShowTrax: {
+            size_t item = size_t(r.id - kShowSpeedometer);
+            if (step) {
+                o.hud_shown[item] = !o.hud_shown[item];
+                game::TouchSetting((std::string("hud_") + game::kHudIds[item] + "_shown").c_str());
+                app::Save();
+            }
+            return OnOff(o.hud_shown[item]);
+        }
         case kFpsCounter: return toggle(o.fps_counter);
         case kCounterPos: {
+            // from Custom (the editor's drag) a step goes to the first or last fixed place
+            if (o.fps_position >= std::size(kFpsPositions)) {
+                if (!step) return kFpsPositionNames[kFpsCustom];
+                o.fps_position = step > 0 ? kFpsPositions[0] : kFpsPositions[std::size(kFpsPositions) - 1];
+                save();
+                return kFpsPositionNames[o.fps_position];
+            }
             int i = StepTable(kFpsPositions, o.fps_position, step);
             if (step) save();
             return kFpsPositionNames[i];
         }
         case kCpuGpu: return toggle(o.fps_usage);
         case kTemps: return toggle(o.fps_temps);
-        case kShaderPreload: return toggle(o.shader_preload);
 
         // VISUALS
         case kBloom: return toggle(o.bloom);
@@ -529,6 +564,7 @@ std::string Value(const Row& r, int step) {
         }
         case kEditButtons:
         case kEditHud:
+        case kResetHud:
             return "";
 
         // SYSTEM
@@ -573,9 +609,25 @@ std::string Value(const Row& r, int step) {
     }
 }
 
+// the HUD back where the game puts it: every item shown at its place, the counter top centre at its size; saved
+void ResetHud() {
+    game::Options& o = game::Opt();
+    const game::Options d;
+    for (size_t i = 0; i < game::kHudItems; i++) {
+        o.hud_x[i] = d.hud_x[i], o.hud_y[i] = d.hud_y[i], o.hud_shown[i] = d.hud_shown[i];
+        for (const char* part : {"_x", "_y", "_shown"})
+            game::TouchSetting((std::string("hud_") + game::kHudIds[i] + part).c_str());
+    }
+    o.fps_position = d.fps_position, o.fps_x = d.fps_x, o.fps_y = d.fps_y, o.fps_scale = d.fps_scale;
+    for (const char* key : {"fps_position", "fps_x", "fps_y", "fps_scale"}) game::TouchSetting(key);
+    app::Save();
+}
+
 void Activate(const Row& r) {
-    // the overlay's editor and the HUD editor are the launcher shell's
-    if (r.id == kEditButtons || r.id == kEditHud) host::ShellRow(r.id - kControlMode, 1);
+    // the overlay's editor and the HUD editor are the launcher shell's (GameActivity.settingsRow's rows 5 and 6)
+    if (r.id == kEditButtons) host::ShellRow(kEditButtons - kControlMode, 1);
+    if (r.id == kEditHud) host::ShellRow(6, 1);
+    if (r.id == kResetHud) ResetHud();
     // the next present with a profile sets it (ApplyCheats), 0 too. This run's only: the settings file's request is the
     // launcher's (one pending from it is replaced, and answered when this one is set)
     if (r.id == kApplyCash) {
@@ -596,13 +648,16 @@ void Defaults(Category cat) {
             o.yellow_tint = d.yellow_tint, s.render_percent = ds.render_percent;
             break;
         case kSpeed:
-            s.fps_cap = ds.fps_cap, s.vsync = ds.vsync, o.fps_counter = d.fps_counter, o.fps_position = d.fps_position;
-            o.fps_usage = d.fps_usage, o.fps_temps = d.fps_temps, o.shader_preload = d.shader_preload;
+            s.fps_cap = ds.fps_cap, s.vsync = ds.vsync, o.shader_preload = d.shader_preload;
             break;
         case kVisuals:
             o.bloom = d.bloom, o.fog = d.fog, o.motion_blur = d.motion_blur, o.reflections = d.reflections;
             o.road_reflections = d.road_reflections, o.shadows = d.shadows, o.particles = d.particles;
             o.rain = d.rain, o.rain_drops = d.rain_drops, o.anti_aliasing = d.anti_aliasing, s.aniso = ds.aniso;
+            break;
+        case kHud:
+            o.fps_counter = d.fps_counter, o.fps_usage = d.fps_usage, o.fps_temps = d.fps_temps;
+            ResetHud();  // the places, the counter's size and every item shown
             break;
         case kSystem:
             o.skip_movies = d.skip_movies;
@@ -617,7 +672,7 @@ void Defaults(Category cat) {
 }
 
 const char* Name(Category cat) {
-    static const char* names[] = {"Screen", "Speed", "Visuals", "Controls", "System", "Cheats"};
+    static const char* names[] = {"Screen", "Speed", "Visuals", "Controls", "HUD", "System", "Cheats"};
     return cat >= 0 && cat < kCount ? names[cat] : "";
 }
 

@@ -33,6 +33,23 @@ void Rumble(int port, uint16_t& left, uint16_t& right) {
     right = 0;
 }
 
+// the HUD editor's keys (HudEditorActivity, Settings.java): the game's HUD items' offsets and switches, the FPS
+// counter's place and size; kept in range whatever the file says
+void LoadHud(const toml::table& t) {
+    Options& o = Opt();
+    for (size_t i = 0; i < kHudItems; i++) {
+        std::string id = std::string("hud_") + kHudIds[i];
+        o.hud_x[i] = std::clamp(int32_t(t[id + "_x"].value_or(int64_t(0))), -600, 600);
+        o.hud_y[i] = std::clamp(int32_t(t[id + "_y"].value_or(int64_t(0))), -240, 240);
+        o.hud_shown[i] = t[id + "_shown"].value_or(true);
+    }
+    o.fps_x = uint32_t(std::clamp(t["fps_x"].value_or(int64_t(500)), int64_t(0), int64_t(1000)));
+    o.fps_y = uint32_t(std::clamp(t["fps_y"].value_or(int64_t(120)), int64_t(0), int64_t(1000)));
+    o.fps_scale = uint32_t(std::clamp(t["fps_scale"].value_or(int64_t(100)), int64_t(kFpsScaleMin),
+                                      int64_t(kFpsScaleMax)));
+    if (o.fps_position >= kFpsPositionCount) o.fps_position = 0;
+}
+
 // what the options list cannot hold
 void Load(const void* table) {
     const toml::table& t = *static_cast<const toml::table*>(table);
@@ -49,6 +66,7 @@ void Load(const void* table) {
     int64_t cash = t["cheat_set_cash"].value_or(int64_t(-1));
     if (t["cheat_set_cash_pending"].value_or(false) && cash >= 0 && cash <= int64_t(kMaxCash))
         o.cheat_set_cash = o.cheat_set_cash_file = cash;
+    LoadHud(t);
 }
 
 }  // namespace
@@ -77,31 +95,35 @@ bool AckCashRequest(int64_t value) {
     return !ec;
 }
 
-namespace {
-
-// layout.toml's [hud], the launcher's HUD layout editor's: each item's offset from where the game puts it, FEng units,
-// kept inside FEng's widest screen
-void LoadHudLayout() {
+// the HUD editor's DONE (GameActivity.nativeReloadHud): its keys from the file as the launcher process left them, and
+// the FPS counter's switches (the HUD category's rows), the rest of the run's settings as they are
+void ReloadHudIfAsked() {
+    if (!g_hud_reload.exchange(false)) return;
+    std::filesystem::path path = app::ExeDir() / app::kGame.settings;
     toml::table t;
     try {
-        t = toml::parse_file((app::ExeDir() / "layout.toml").string());
+        SettingsLock lock(path);
+        t = toml::parse_file(path.string());
     } catch (...) {
         return;
     }
-    constexpr const char* kIds[kHudItems] = {"speedometer", "minimap", "race_info", "ea_trax"};
-    for (size_t i = 0; i < kHudItems; i++) {
-        const toml::table* p = t["hud"][kIds[i]].as_table();
-        if (!p) continue;
-        g_hud_x[i] = std::clamp(float((*p)["x"].value_or(0.0)), -600.0f, 600.0f);
-        g_hud_y[i] = std::clamp(float((*p)["y"].value_or(0.0)), -240.0f, 240.0f);
-    }
+    Options& o = Opt();
+    o.fps_counter = t["fps_counter"].value_or(o.fps_counter);
+    o.fps_position = uint32_t(t["fps_position"].value_or(int64_t(o.fps_position)));
+    o.fps_usage = t["fps_usage"].value_or(o.fps_usage);
+    o.fps_temps = t["fps_temps"].value_or(o.fps_temps);
+    LoadHud(t);
 }
+
+namespace {
 
 // after the settings load, before boot
 void Init() {
     BootLanguage();  // latched before the options can change the setting
     input::LoadBindings();
-    LoadHudLayout();
+    // layout.toml's [hud], the HUD offsets before they were the settings file's: gone, once
+    std::error_code ec;
+    std::filesystem::remove(app::ExeDir() / "layout.toml", ec);
     audio::SetOutputMode(Opt().audio_output);
     LatchAspect();            // the frame's shape for this run, before anything asks for it
     PublishRenderSettings();  // the renderer's first set, before its Init
@@ -114,6 +136,15 @@ void Save(void* table) {
     toml::table keys;
     for (const auto& [id, value] : o.keys) keys.insert(id, value);
     t.insert("keys", keys);
+    for (size_t i = 0; i < kHudItems; i++) {
+        std::string id = std::string("hud_") + kHudIds[i];
+        t.insert(id + "_x", int64_t(o.hud_x[i]));
+        t.insert(id + "_y", int64_t(o.hud_y[i]));
+        t.insert(id + "_shown", o.hud_shown[i]);
+    }
+    t.insert("fps_x", int64_t(o.fps_x));
+    t.insert("fps_y", int64_t(o.fps_y));
+    t.insert("fps_scale", int64_t(o.fps_scale));
 }
 
 }  // namespace

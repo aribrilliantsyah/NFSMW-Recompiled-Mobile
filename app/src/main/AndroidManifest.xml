@@ -49,11 +49,13 @@
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation" />
 
+        <!-- The HUD editor: see-through, so opened from the game the paused game shows behind its boxes (from the
+             launcher it paints its own background). -->
         <activity
             android:name=".HudEditorActivity"
             android:exported="false"
             android:screenOrientation="sensorLandscape"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation" />
 
         <activity

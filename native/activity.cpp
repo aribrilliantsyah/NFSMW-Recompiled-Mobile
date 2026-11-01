@@ -10,6 +10,7 @@
 #include <string>
 
 #include "common/mouse_keyboard.h"
+#include "common/hud_layout.h"
 #include "common/options.h"
 #include "common/settings_menu.h"
 #include "host.h"
@@ -125,6 +126,12 @@ JNIEXPORT void JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeCardPause(JN
 // TouchControllerView, with the prompts: the game is in a race (free roam too), game::Racing (src/game/game.cpp)
 JNIEXPORT jboolean JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeRacing(JNIEnv*, jclass) {
     return game::Racing();
+}
+
+// GameActivity back in front (after the HUD editor, which writes the settings file from the launcher's process): the
+// game thread reads the HUD's keys again (src/common/game_info.cpp ReloadHudIfAsked)
+JNIEXPORT void JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeReloadHud(JNIEnv*, jclass) {
+    game::g_hud_reload = true;
 }
 
 }  // extern "C"

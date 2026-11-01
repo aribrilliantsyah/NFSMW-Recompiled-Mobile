@@ -38,6 +38,9 @@ void PublishRenderSettings() {
     r.fps_position = o.fps_position;
     r.fps_usage = o.fps_usage;
     r.fps_temps = o.fps_temps;
+    r.fps_x = o.fps_x;
+    r.fps_y = o.fps_y;
+    r.fps_scale = o.fps_scale;
     r.aspect = Aspect();
     std::lock_guard lock(g_lock);
     g_published = r;

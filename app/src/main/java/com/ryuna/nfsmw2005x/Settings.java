@@ -7,7 +7,6 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Locale;
 
 /**
  * The launcher's settings and the files the native engine reads in the app's
@@ -21,13 +20,12 @@ import java.util.Locale;
  *                    the launcher edits it in place (TomlSettings) and the
  *                    game's own menu saves into it (app::Save), each keeping
  *                    the other's keys.
- *   layout.toml      [hud]: where the HUD's speedometer, minimap, race info
- *                    and EA Trax banner are moved (src/game/hud_layout.cpp)
  *
  * SharedPreferences ("nfsmw") keep the launcher's own state: the game folder,
- * the overlay's switches, HUD offsets and the controller mapping, which go
- * into the files at PLAY. Touch layout positions live in their own
- * preferences ("nfsmw_touch"), written by the editor (TouchControllerView).
+ * the overlay's switches and the controller mapping, which go into the files
+ * at PLAY. Touch layout positions live in their own preferences
+ * ("nfsmw_touch"), written by the editor (TouchControllerView). The HUD
+ * editor's keys (hud_*, fps_x, fps_y, fps_scale) are the settings file's.
  */
 final class Settings {
     // Game
@@ -82,8 +80,11 @@ final class Settings {
     static final String K_TILT_SENS = "tilt_sens";    // 1..10
     static final String K_VIBRATE = "vibrate";
     static final String K_HAPTIC = "haptic";          // tick on press
-    // HUD positions, FEng units (480 to the frame's height) from where the game puts them
-    static final String K_HUD_PREFIX = "hud_";        // + HUD_IDS[i] + "_x" / "_y"
+    // the HUD editor's (HudEditorActivity, src/common/game_info.cpp LoadHud): per item hud_<id>_x / _y, FEng units (480
+    // to the frame's height) from where the game puts it, and hud_<id>_shown; the FPS counter's middle in thousandths
+    // of the screen (with fps_position FPS_CUSTOM) and its size in percent
+    static final String K_FPS_X = "fps_x", K_FPS_Y = "fps_y", K_FPS_SCALE = "fps_scale";
+    static final int FPS_CUSTOM = 6, FPS_SCALE_MIN = 50, FPS_SCALE_MAX = 200;
     // Physical pad
     static final String K_MAP_PREFIX = "map_";        // + xbox input name
     static final String K_DEADZONE = "deadzone";      // percent
@@ -100,12 +101,37 @@ final class Settings {
     static final int STEER_TILT = 2;
     static final int STEER_WHEEL = 3;
 
-    /** The HUD items src/common/hud_layout.h moves, as layout.toml's [hud] keys. */
+    /** The HUD items src/common/hud_layout.h moves, as the settings file's hud_<id> keys. */
     static final String[] HUD_IDS = {"speedometer", "minimap", "race_info", "ea_trax"};
-    static final String[] HUD_LABELS = {"SPEEDOMETER", "MINIMAP", "RACE INFO", "EA TRAX"};
-    /** kHudBoxes: middle x, y and half sizes in FEng's screen (origin the frame's middle, 480 high). */
+    static final String[] HUD_LABELS = {"Speedometer", "Minimap", "Race info", "EA Trax"};
+    /** Where the game draws them: middle x, y and half sizes in FEng's screen (origin the frame's middle, 480 high). */
     static final float[][] HUD_BOXES = {
         {307, 133, 80, 78}, {-307, 131, 68, 68}, {296, -136, 78, 64}, {-168, -183, 176, 32}};
+
+    static String hudKey(int item, String part) { return "hud_" + HUD_IDS[item] + "_" + part; }
+
+    static int hudX(TomlSettings t, int item) { return within(t.getInt(hudKey(item, "x"), 0), -600, 600, 0); }
+
+    static int hudY(TomlSettings t, int item) { return within(t.getInt(hudKey(item, "y"), 0), -240, 240, 0); }
+
+    static boolean hudShown(TomlSettings t, int item) { return t.getBool(hudKey(item, "shown"), true); }
+
+    static int fpsScale(TomlSettings t) {
+        return within(t.getInt(K_FPS_SCALE, 100), FPS_SCALE_MIN, FPS_SCALE_MAX, 100);
+    }
+
+    /** The HUD's defaults: every item where the game puts it and shown, the counter top centre at its size. */
+    static void resetHud(TomlSettings t) {
+        for (int i = 0; i < HUD_IDS.length; i++) {
+            t.put(hudKey(i, "x"), 0);
+            t.put(hudKey(i, "y"), 0);
+            t.put(hudKey(i, "shown"), true);
+        }
+        t.put(K_FPS_POS, 0);
+        t.put(K_FPS_X, 500);
+        t.put(K_FPS_Y, 120);
+        t.put(K_FPS_SCALE, 100);
+    }
 
     /** Tilt angle (degrees) for full lock at sensitivity s (1..10). */
     static float tiltAngle(int s) {
@@ -161,8 +187,9 @@ final class Settings {
         return p.getString(K_MAP_PREFIX + XBOX_INPUTS[i], SDL_DEFAULTS[i]);
     }
 
-    static float hud(SharedPreferences p, int item, int axis) {
-        return p.getFloat(K_HUD_PREFIX + HUD_IDS[item] + (axis == 0 ? "_x" : "_y"), 0f);
+    /** The HUD offsets the launcher kept in its preferences before they were the settings file's. */
+    private static float legacyHud(SharedPreferences p, int item, int axis) {
+        return p.getFloat("hud_" + HUD_IDS[item] + (axis == 0 ? "_x" : "_y"), 0f);
     }
 
     /** The settings file's keys the launcher shows: the key, the preference it lived in before the file was the
@@ -210,6 +237,17 @@ final class Settings {
             }
             t.put(key, v);
         }
+        // the HUD: the old preferences' offsets taken over once (they went to layout.toml at PLAY)
+        for (int i = 0; i < HUD_IDS.length; i++) {
+            for (int a = 0; a < 2; a++) {
+                String key = hudKey(i, a == 0 ? "x" : "y");
+                if (!t.has(key)) t.put(key, t.recovered() ? 0 : Math.round(legacyHud(p, i, a)));
+            }
+            if (!t.has(hudKey(i, "shown"))) t.put(hudKey(i, "shown"), true);
+        }
+        if (!t.has(K_FPS_X)) t.put(K_FPS_X, 500);
+        if (!t.has(K_FPS_Y)) t.put(K_FPS_Y, 120);
+        if (!t.has(K_FPS_SCALE)) t.put(K_FPS_SCALE, 100);
     }
 
     /** The overlay's mode, steering and tilt from the settings file (the in-game overlay, the editor); the file is
@@ -365,8 +403,8 @@ final class Settings {
     }
 
     /** At PLAY: the settings file with the game folder, the active save slot's folder (save_dir) and the controller
-     *  mapping from the preferences, every other key as the launcher and the game left it; layout.toml and perf from
-     *  the preferences. */
+     *  mapping from the preferences, every other key as the launcher and the game left it; perf from the
+     *  preferences. */
     static void writeNativeFiles(Context c) throws IOException {
         SharedPreferences p = prefs(c);
         File dir = filesDir(c);
@@ -382,11 +420,6 @@ final class Settings {
             t.put("padmap." + K_INVERT_LY, p.getBoolean(K_INVERT_LY, false));
             t.put("padmap." + K_INVERT_RY, p.getBoolean(K_INVERT_RY, false));
         });
-
-        StringBuilder l = new StringBuilder("# written by the launcher (HUD layout editor)\n[hud]\n");
-        for (int i = 0; i < HUD_IDS.length; i++)
-            l.append(String.format(Locale.US, "%s = { x = %.1f, y = %.1f }\n", HUD_IDS[i], hud(p, i, 0), hud(p, i, 1)));
-        write(new File(dir, "layout.toml"), l.toString());
 
         // native/main.cpp: an empty file named perf turns on the engine's perf log lines (XBE_PERF)
         File perf = new File(dir, "perf");

@@ -24,7 +24,7 @@ The game's x86 code is statically recompiled ahead of time to C++ with [XboxXBE-
 2. Open **NFS Most Wanted** and tap **INSTALL FROM ISO…**: pick the Xbox disc image (`.iso`). It is extracted once into `Android/data/com.ryuna.nfsmw2005x/files/game` (about 2.9 GB); the `.iso` can be deleted afterwards. A folder extracted on a PC (`default.xbe` with the disc's `NFS` folder beside it) works too: **Choose folder…** (asks for all files access).
 3. Tap **PLAY**.
 
-The settings (`mostwanted.toml`, shared by the launcher and the game) and the HUD layout (`layout.toml`, written at each PLAY) are in `Android/data/com.ryuna.nfsmw2005x/files`; the shader cache and the logs (`logs`) are there too. Saves: see [Saves](#saves).
+The settings (`mostwanted.toml`, shared by the launcher and the game, the HUD layout among them) are in `Android/data/com.ryuna.nfsmw2005x/files`; the shader cache and the logs (`logs`) are there too. Saves: see [Saves](#saves).
 
 The supported disc is the USA Black Edition (`default.xbe` SHA-1 `f636a16af04171089f879a4bed646e185c734233`).
 
@@ -36,16 +36,23 @@ Launcher tab **CONTROLS**, and the game's CONTROLS category.
 - **Control mode**: **MOBILE** (steering, gas and brake pedals, nitrous, e-brake, speedbreaker, a gear lever; in the game's menus, their buttons as icons) or **XBOX** (the whole Xbox controller).
 - **Steering** (MOBILE): Stick, Arrows, Wheel (drag round it) or Tilt (turn the phone), with **Tilt sensitivity**.
 - **Opacity** and **Size** of the current layout's buttons (Size scales every button over each one's own size from the editor), kept in `mostwanted.toml` (`touch_opacity_<mode>`, `touch_size_<mode>`) and shared by the launcher and the game.
-- **Edit buttons**: move, resize and fade each control (also the ⚙ next to HIDE/TOUCH in the game). **Edit HUD**: moves the speedometer, the minimap, the race information and the EA Trax banner.
+- **Edit buttons**: move, resize and fade each control (also the ⚙ next to HIDE/TOUCH in the game).
 - In the game's menus a tap on the highlighted item is A and a swipe steps through the list; the keyboard takes taps.
 - Launcher only: on-screen controller, hide with a controller, button feedback, vibration (with a test).
 - **Controller**: any controller SDL3 supports, with rumble (the phone vibrates without one), each Xbox button remappable (**Controller mapping**). The touch controls hide while a controller is in use. **Keyboard** too.
+
+## HUD
+Launcher tab **HUD**, and the game's HUD category.
+- **Edit HUD** (also on the ☰ card in the game, which pauses the race first): the speedometer, the minimap, the race information, the EA Trax banner and the FPS counter as boxes over the game. Drag one to move it, **Hide** / **Show** it, and size the FPS counter with − / +. Opened in the game, the paused game shows behind the boxes and the HUD moves as soon as the editor closes, no restart. The game's own HUD keeps its size (its pieces do not scale together).
+- **Reset HUD**: every item back where the game puts it, shown, and the FPS counter top centre at its size.
+- **Speedometer**, **Minimap**, **Race info**, **EA Trax**: shown or hidden, at once.
+- **FPS counter**, **Counter position** (six places, or Custom where Edit HUD left it), **CPU/GPU usage**, **Temperatures**.
 
 ## Settings
 | Tab | Rows |
 |---|---|
 | SCREEN | Widescreen (Hor+ on the phone's shape; off, the Xbox's 4:3 with side bars), Aspect ratio, Render resolution (25% to 200% of the screen's height), Screen filter (Sharpen, Vivid, Scanlines, CRT, HDR), Yellow filter (the game's colour grading, off by default) |
-| SPEED | Preset (Saver, Balanced, Max), FPS cap (30 to 360, the display's refresh rate or unlimited), V-Sync, FPS counter, Counter position, CPU/GPU usage, Temperatures, Shader preloading; in the launcher, Performance log |
+| SPEED | Preset (Saver, Balanced, Max), FPS cap (30 to 360, the display's refresh rate or unlimited), V-Sync, Shader preloading; in the launcher, Performance log |
 | VISUALS | Bloom, Fog, Motion blur, Car reflections (full, every 2nd or 4th frame, off), Road reflections, Shadows, Particles, Falling rain, Screen raindrops, Anti-aliasing (FXAA, SSAA 2x), Anisotropic filtering |
 | SYSTEM | Language (English, or Indonesian: the recompilation's text and the game's menus translated), Audio output (automatic, mono, stereo, 5.1), Skip movies, Active save slot, About |
 

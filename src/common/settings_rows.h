@@ -3,11 +3,11 @@
 #include <string>
 #include <vector>
 
-// the in-game settings' six categories, their rows and values (settings_rows.cpp); the game's options menu shows them
-// (src/game/settings_menu.cpp). Game thread
+// the in-game settings' seven categories, their rows and values (settings_rows.cpp); the game's options menu shows
+// them (src/game/settings_menu.cpp). Game thread
 namespace settings {
 
-enum Category { kScreen, kSpeed, kVisuals, kControls, kSystem, kCheats, kCount };
+enum Category { kScreen, kSpeed, kVisuals, kControls, kHud, kSystem, kCheats, kCount };
 enum class Kind { Toggle, Choice, Number, Action };
 
 struct Row {
