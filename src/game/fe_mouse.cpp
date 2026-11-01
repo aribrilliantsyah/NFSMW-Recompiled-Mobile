@@ -222,17 +222,29 @@ std::string Label(uint32_t text) {
     return out;
 }
 
-// A prompt's label is the string after its icon in its group; with none after it, the string just ahead of the icon
-// that no icon took (custom race mode select's X, its "View Tutorial" listed before the icon)
+// A prompt's label is the string drawn right of its icon: in the icon's group, the nearest string on its line (about
+// the same y) whose x is past the icon's. The order is no guide: Challenge Series lists "A, ACCEPT, VIEW TUTORIAL,
+// X, BACK, B", each label before its icon and X's after A's label, where pairing by order gave B nothing and X
+// "BACK". With no such string (a place unread), the order's: the string after the icon, else the string just ahead
+// of it that no icon took (custom race mode select's X)
+constexpr uint32_t kObjectData = 0x2C, kDataX = 0x1C, kDataY = 0x20;
+constexpr float kLineSlop = 6.0f;      // FEng units a label's y may differ from its icon's
+constexpr float kLabelReach = 80.0f;   // how far right of its icon a label may start
+
+bool Place(uint32_t o, float& x, float& y) {
+    uint32_t d = Peek(o + kObjectData);
+    if (!d || !mem::IsCommitted(d + kDataY + 3)) return false;
+    x = PeekFloat(d + kDataX);
+    y = PeekFloat(d + kDataY);
+    return std::isfinite(x) && std::isfinite(y);
+}
+
 void ScanPrompts(uint32_t first, int count, FePrompts& out, int& budget) {
-    int pending = -1;                     // an icon waiting for its label
-    uint32_t loose = 0;                   // the object before, when it is a string no icon took
-    uint32_t ahead[kFePromptCount] = {};  // each icon's loose string
-    auto take = [&](int i, uint32_t s) {
-        if (!out.label[i].empty()) return;
-        out.label[i] = Label(Peek(s + kStringText));
-        out.hash[i] = Peek(s + kStringHash);
-    };
+    struct Icon { int pad; uint32_t object, after, before; };
+    std::vector<Icon> icons;
+    std::vector<uint32_t> strings;  // the group's shown strings, in order
+    int pending = -1;               // an icon waiting for the string after it (the order's fallback)
+    uint32_t loose = 0;             // the object before, when it is a string no icon took
     for (uint32_t o = first; o && budget-- > 0 && count != 0; o = Peek(o + kObjectNext), count--) {
         if (Peek(o + kObjectFlags) & kObjectHidden) continue;
         uint32_t type = Peek(o + kObjectType), before = loose;
@@ -248,17 +260,54 @@ void ScanPrompts(uint32_t first, int count, FePrompts& out, int& budget) {
             for (int i = 0; i < kFePromptCount; i++)
                 if (texture == kPromptTextures[i]) {
                     out.shown[i] = true;
-                    pending = i;
-                    if (!ahead[i]) ahead[i] = before;
+                    pending = int(icons.size());
+                    icons.push_back({i, o, 0, before});
                 }
         } else if (type == kTypeString) {
-            if (pending >= 0) take(pending, o);
+            strings.push_back(o);
+            if (pending >= 0) icons[size_t(pending)].after = o;
             else loose = o;
             pending = -1;
         }
     }
-    for (int i = 0; i < kFePromptCount; i++)
-        if (ahead[i]) take(i, ahead[i]);
+    std::vector<bool> used(strings.size());
+    auto take = [&](int pad, uint32_t s) {
+        if (!s || !out.label[pad].empty()) return;
+        out.label[pad] = Label(Peek(s + kStringText));
+        out.hash[pad] = Peek(s + kStringHash);
+    };
+    // by place first: each icon the nearest unused string on its line to its right
+    std::vector<bool> placed(icons.size());
+    for (size_t k = 0; k < icons.size(); k++) {
+        float ix, iy;
+        if (!Place(icons[k].object, ix, iy)) continue;
+        int best = -1;
+        float best_dx = kLabelReach;
+        for (size_t s = 0; s < strings.size(); s++) {
+            float sx, sy;
+            if (used[s] || !Place(strings[s], sx, sy) || std::fabs(sy - iy) > kLineSlop) continue;
+            float dx = sx - ix;
+            if (dx > 0 && dx < best_dx) best_dx = dx, best = int(s);
+        }
+        if (best < 0) continue;
+        used[size_t(best)] = true;
+        placed[k] = true;
+        take(icons[k].pad, strings[size_t(best)]);
+    }
+    // the rest by order: the string after the icon, else the loose one just ahead, either not taken by place
+    auto free_string = [&](uint32_t s) {
+        for (size_t i = 0; i < strings.size(); i++) {
+            if (strings[i] != s) continue;
+            if (used[i]) return false;
+            used[i] = true;
+            return true;
+        }
+        return false;
+    };
+    for (size_t k = 0; k < icons.size(); k++)
+        if (!placed[k] && icons[k].after && free_string(icons[k].after)) take(icons[k].pad, icons[k].after);
+    for (size_t k = 0; k < icons.size(); k++)
+        if (!placed[k] && icons[k].before && free_string(icons[k].before)) take(icons[k].pad, icons[k].before);
 }
 
 std::mutex g_prompts_lock;
