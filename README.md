@@ -101,9 +101,12 @@ The SDK is vendored in `sdk/`, at the upstream commit in `sdk/UPSTREAM_COMMIT`, 
 
 ## Credits
 - [XboxXBE-Recomp](https://github.com/TGP482/XboxXBE-Recomp) by TGP482: the static recompiler and the portable runtime (Xbox kernel, XDK libraries and Direct3D 8) this port is built on.
-- [Black-Android](https://github.com/RanggaCasper/Black-Android) and [ShaolinMonks-Android](https://github.com/RanggaCasper/ShaolinMonks-Android) by RanggaCasper: the Android host this port is built from.
+- [MostWanted-Android](https://github.com/RanggaCasper/MostWanted-Android) by [RanggaCasper](https://github.com/RanggaCasper): the engine this port runs on (the Android native host, the Vulkan renderer, Direct3D 8 and DirectSound on the host, the game's patches), carried over from his [Black-Android](https://github.com/RanggaCasper/Black-Android) and [ShaolinMonks-Android](https://github.com/RanggaCasper/ShaolinMonks-Android). His later fixes to the engine taken in since:
+  - `native/vulkan.cpp` as of his `05c5b7a`: split screen drawn under the HUD (`009b144`), and with it [zetaxlinux](https://github.com/zetaxlinux)'s Vulkan 1.1 submit and fence failures handled instead of hanging (`c37fa36`);
+  - the boot movies' crash, a stream read before its block was set (`6733577`);
+  - the cars' reflection white at a race's start when not FULL (`a8cb125`);
+  - a pursuit's boxes left behind when the race information is moved in the HUD editor (`b896442`).
 - Zukiru: the HDR screen filter.
-- [bagasromadon](https://github.com/bagasromadon): Button Design.
 - [SDL](https://github.com/libsdl-org/SDL), [glslang](https://github.com/KhronosGroup/glslang), [toml++](https://github.com/marzer/tomlplusplus) and [Dear ImGui](https://github.com/ocornut/imgui).
 - [xemu](https://github.com/xemu-project/xemu) and [Cxbx-Reloaded](https://github.com/Cxbx-Reloaded/Cxbx-Reloaded), which XboxXBE-Recomp used as references for Xbox hardware and API behavior.
 
