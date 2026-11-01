@@ -10,6 +10,7 @@
 #include <string>
 
 #include "common/mouse_keyboard.h"
+#include "common/options.h"
 #include "common/settings_menu.h"
 #include "host.h"
 
@@ -119,6 +120,11 @@ JNIEXPORT void JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeOpenSettings
 // GameActivity's ☰ card: true as it opens (a race with no menu up pauses), false on its Resume (src/game/settings_menu.cpp)
 JNIEXPORT void JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeCardPause(JNIEnv*, jclass, jboolean pause) {
     game::RequestCardPause(pause);
+}
+
+// TouchControllerView, with the prompts: the game is in a race (free roam too), game::Racing (src/game/game.cpp)
+JNIEXPORT jboolean JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeRacing(JNIEnv*, jclass) {
+    return game::Racing();
 }
 
 }  // extern "C"

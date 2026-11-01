@@ -40,6 +40,8 @@ public class GameActivity extends SDLActivity {
      *  hash ("" when unknown), pad one of A B X Y LT RT, label the game's text; null with no menu up
      *  (native/activity.cpp). */
     static native String[] nativeMenuPrompts();
+    /** The game is in a race (free roam too): the race controls' state in MOBILE (native/activity.cpp). */
+    static native boolean nativeRacing();
     /** The overlay's ☰: the game's settings, -1 their categories, else one; in a race it pauses first
      *  (src/game/settings_menu.cpp). */
     static native void nativeOpenSettings(int category);

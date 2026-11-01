@@ -205,11 +205,18 @@ public final class TouchControllerView extends View {
     Runnable onSettings;
 
     // The game's own menus (native/touch.cpp): touches off the controls reach SDLSurface and are FEng's pointer,
-    // swipes and the keyboard's keys. In MOBILE the race controls give way to the menu's prompts while one is up.
+    // swipes and the keyboard's keys. In MOBILE the overlay has three states: race (the race controls), menu (the
+    // menu's prompts) and neither (loading, movies, fades between menus: the top row alone), so the race controls
+    // never flash between two menus.
     private static final long MENU_POLL_MS = 250;
+    // a race shows after this many polls in a row in one with no menu (a loading screen's last frames are the flow's
+    // race already); a menu's prompts stay this many polls after they go (a fade between two menus)
+    private static final int RACE_POLLS = 2, MENU_HOLD_POLLS = 2;
     private String[] lastPrompts;           // nativeMenuPrompts' last answer
     private final java.util.Set<String> unknownPrompts = new java.util.HashSet<>();  // labels logged once
     private List<Prompt> prompts;           // null: no game menu up, or XBOX, which keeps its layout
+    private boolean racing;                 // MOBILE: the race controls are up (XBOX: always, from the first poll)
+    private int racePolls, menuGonePolls;
     private final Runnable menuPoll = new Runnable() {
         @Override public void run() {
             pollMenu();
@@ -504,9 +511,10 @@ public final class TouchControllerView extends View {
         invalidate();
     }
 
-    /** Drawn and touchable now: in its mode, and in MOBILE over a game menu only the top row. */
+    /** Drawn and touchable now: in its mode, and in MOBILE outside a race (a menu, a loading screen) only the top
+     *  row. */
     private boolean visible(Control c) {
-        return c.shown() && (editing || prompts == null || c.inMenus);
+        return c.shown() && (editing || (racing && prompts == null) || c.inMenus);
     }
 
     private void layoutUi() {
@@ -679,18 +687,29 @@ public final class TouchControllerView extends View {
 
     // ------------------------------------------------------------ game menus
 
-    /** The game's menu prompts, from native: in MOBILE they replace the race controls while a menu is up. */
+    /** The game's menu prompts and race state, from native: in MOBILE a menu's prompts replace the race controls,
+     *  and outside a race with no menu (loading, a movie, a fade) only the top row shows. */
     private void pollMenu() {
         String[] p = null;
+        boolean race = true;
         if (mode == Settings.MODE_MOBILE) {
-            try { p = GameActivity.nativeMenuPrompts(); } catch (UnsatisfiedLinkError e) { return; }
+            try {
+                p = GameActivity.nativeMenuPrompts();
+                race = GameActivity.nativeRacing();
+            } catch (UnsatisfiedLinkError e) { return; }
         }
-        if (Arrays.equals(p, lastPrompts)) return;
-        boolean was = prompts != null;
-        if (DEBUG) android.util.Log.d("nfsmw-pad", "prompts " + Arrays.toString(p));
+        // a menu's prompts gone: held a few polls (a fade to the next menu) unless the race is back (a resume)
+        if (p == null && lastPrompts != null && !race && ++menuGonePolls < MENU_HOLD_POLLS) return;
+        menuGonePolls = 0;
+        // into a race: only after a few polls in a row in one with no menu; a menu (the pause) leaves it at once
+        racePolls = race && p == null ? racePolls + 1 : 0;
+        boolean nowRacing = mode != Settings.MODE_MOBILE || (racing ? race : racePolls >= RACE_POLLS);
+        if (Arrays.equals(p, lastPrompts) && nowRacing == racing) return;
+        if (DEBUG) android.util.Log.d("nfsmw-pad", "prompts " + Arrays.toString(p) + " racing " + nowRacing);
         lastPrompts = p;
         prompts = p == null ? null : layoutPrompts(p);
-        if (prompts != null && !was) releaseHidden();
+        racing = nowRacing;
+        releaseHidden();
         send();
         invalidate();
     }
@@ -953,7 +972,7 @@ public final class TouchControllerView extends View {
                 }
             }
             // tilt steers races only: over a menu the left stick would move its highlight
-            if (tiltActive() && prompts == null) lx = Math.round(tilt * 32767);
+            if (tiltActive() && racing && prompts == null) lx = Math.round(tilt * 32767);
             buttons |= pulseDigital;
             face |= pulseFace;
             lt = Math.max(lt, pulseLt);
