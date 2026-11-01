@@ -158,6 +158,8 @@ constexpr Entry kEntries[] = {
     {"SETTINGS", {u"Paramètres", u"Einstellungen", u"Impostazioni", u"Configuración", u"Pengaturan"}},
     {"BACK", {u"Retour", u"Zurück", u"Indietro", u"Atrás", u"Kembali"}},
     {"DEFAULTS", {u"Par défaut", u"Standard", u"Predefiniti", u"Por defecto", u"Bawaan"}},
+    // the main and pause menus' icon of ours (src/game/settings_menu.cpp); English and Indonesian only for now
+    {"CONFIGURATION", {u"", u"", u"", u"", u"Konfigurasi"}},
     {"MOUSE", {u"Souris", u"Maus", u"Mouse", u"Ratón", u"Mouse"}},
     {"KEYBOARD", {u"Clavier", u"Tastatur", u"Tastiera", u"Teclado", u"Keyboard"}},
     {"Press a key or mouse button to bind, Escape cancels", {u"Appuyez sur une touche ou un bouton de souris, Échap pour annuler", u"Taste oder Maustaste drücken, Escape bricht ab", u"Premi un tasto o un pulsante del mouse, Esc per annullare", u"Pulsa una tecla o un botón del ratón, Escape para cancelar", u"Tekan tombol keyboard atau mouse untuk mengatur, Escape untuk batal"}},

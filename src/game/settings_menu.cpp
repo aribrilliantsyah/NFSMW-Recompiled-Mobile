@@ -5,7 +5,7 @@
 // Pause_Options.fng, where UIOptionsScreen::Setup (0x1055B0) adds the category's widgets and finishes with 0x153080;
 // a category past 9 gets none. So a category of ours is one more icon (category 0x20 + Category) and its rows are
 // toggle widgets (0x5C bytes, ctor 0x13A800, added by 0x139D40) whose Act and Draw are host functions. The six sit in
-// a menu of their own, SETTINGS, an icon of the main and pause menus beside their OPTIONS: it opens the options'
+// a menu of their own, Configuration, an icon of the main and pause menus beside their OPTIONS: it opens the options'
 // package as OPTIONS does and that UIOptionsMain gets our icons in place of the game's; a category's Back comes back
 // to it. The icons' textures are made here: GetTextureInfo (0xC5900) answers their hashes with a copy of the Audio
 // icon's TextureInfo whose D3D texture is ours (category_icons.inc, tools/category_icons.py). The game's addresses
@@ -26,6 +26,7 @@
 #include "common/options.h"
 #include "common/settings_menu.h"
 #include "common/settings_rows.h"
+#include "common/translations.h"
 #include "core/log.h"
 #include "cpu/x86_ops.h"
 #include "kernel/kernel.h"
@@ -109,8 +110,8 @@ uint32_t g_scratch = 0;
 uint32_t g_icon_vtable = 0, g_widget_vtable = 0;
 std::unordered_map<uint32_t, int> g_icons;  // IconOption → category index
 static_assert(kIconCount == settings::kCount, "tools/category_icons.py draws an icon a category");
-uint32_t g_textures[kIconCount + 1] = {};  // the categories', then SETTINGS' (index kCount)
-bool g_settings_next = false;  // next UIOptionsMain is SETTINGS
+uint32_t g_textures[kIconCount + 1] = {};  // the categories', then Configuration's (index kCount)
+bool g_settings_next = false;  // next UIOptionsMain is Configuration
 uint32_t g_settings_react = 0;
 
 // ---- text helpers ----
@@ -240,7 +241,7 @@ std::string CategoryTitle(int cat) { return settings::Name(settings::Category(ca
 void IconReact(X86Context& ctx, uint8_t*) {
     auto it = g_icons.find(ctx.ecx);
     uint32_t esp = ctx.esp;
-    // the SETTINGS menu-level icon: as OPTIONS beside it
+    // the Configuration menu-level icon: as OPTIONS beside it
     if (it != g_icons.end() && it->second == settings::kCount && g_settings_react) {
         CallThis(ctx, ctx.ecx, g_settings_react,
                  {R32(esp + 4), R32(esp + 8), R32(esp + 12), R32(esp + 16), R32(esp + 20)});
@@ -278,7 +279,7 @@ bool SlotFree(X86Context& ctx, uint32_t menu) {
     return CallGuest(ctx, kFindImage, {R32(scroller + kScrollerPackage), hash}) != 0;
 }
 
-// add category icons to the SETTINGS menu (0 to kCount-1), or the SETTINGS top-level icon (kCount). CONTROLS is the
+// add category icons to the Configuration menu (0 to kCount-1), or the Configuration top-level icon (kCount). CONTROLS is the
 // touch overlay's own (its ⚙ / ☰ menu: mode, steering, tilt, opacity, size, editors), so the game's menu leaves it out
 void AddIcons(X86Context& ctx, uint32_t menu, int first, int last) {
     if (!g_icon_vtable) {
@@ -291,7 +292,7 @@ void AddIcons(X86Context& ctx, uint32_t menu, int first, int last) {
         if (cat == settings::kControls) continue;
         uint32_t option = CallGuest(ctx, kNew, {kIconOptionSize});
         if (!option) break;
-        uint32_t hash = kIconHashes + uint32_t(cat);  // kCount: SETTINGS' own
+        uint32_t hash = kIconHashes + uint32_t(cat);  // kCount: Configuration's own
         CallThis(ctx, option, kIconCtor, {hash, 0, 0});
         W32(option, g_icon_vtable);
         g_icons[option] = cat;
@@ -652,7 +653,7 @@ uint32_t g_done_gen = 0;        // the last generation opened or dropped
 uint32_t g_handshake_gen = 0;   // the generation whose START went (0 none): one START a handshake
 uint32_t g_seen_gen = 0;        // the generation the timeout runs for, from g_seen_at
 uint64_t g_seen_at = 0;
-bool g_open = false;            // a SETTINGS session (its list or a category screen of ours) is up
+bool g_open = false;            // a Configuration session (its list or a category screen of ours) is up
 bool g_flag_ours = false;       // OpenRequested set the FEDatabase options flag, not a game's OPTIONS
 // the ☰ card (RequestCardPause): 1 pause, 2 resume, 0 none; game thread: the race's pause is the card's own
 std::atomic<int> g_card{0};
@@ -667,7 +668,7 @@ bool NameIs(uint32_t name, uint32_t want) {
 // the game's options screens a category of ours opens on
 bool ScreenPackage(uint32_t name) { return NameIs(name, kOptionsFng) || NameIs(name, kPauseOptionsFng); }
 
-// SETTINGS ends (any other package than ours opening): the next UIOptionsMain is the game's, the options flag goes if
+// Configuration ends (any other package than ours opening): the next UIOptionsMain is the game's, the options flag goes if
 // it was ours, and the guest's category is a game's again (one of ours left there made the next OPTIONS open ours)
 void LeaveSettings() {
     g_open = false;
@@ -701,7 +702,7 @@ bool OpenRequested(X86Context& ctx, int category) {
     } else {
         // one of ours, not the guest's last (its 7 builds another controller, 0x105790, not a UIOptionsMain)
         W32(Options() + kCategory, kFirstCategory);
-        g_settings_next = true;  // the UIOptionsMain it opens is SETTINGS' (0x128AB0)
+        g_settings_next = true;  // the UIOptionsMain it opens is Configuration's (0x128AB0)
         package = pause ? kPauseMainFng : kMainMenuSubFng;
     }
     g_open = true;
@@ -757,7 +758,7 @@ void SettingsTick(X86Context& ctx) {
     };
     if (g_seen_gen != gen) g_seen_gen = gen, g_seen_at = NowMs();  // a new generation's timeout starts as it is seen
     if (NowMs() - g_seen_at > kRequestMs) return drop();
-    if (g_open) return drop();  // already in SETTINGS
+    if (g_open) return drop();  // already in Configuration
     uint32_t package = FeInputPackage();
     if (Racing()) {
         if (!OrdinaryPause(package)) {
@@ -790,7 +791,7 @@ void SettingsMenuTick(X86Context& ctx) {
 
 using namespace game;
 
-// GetTextureInfo(hash, default, unloaded), cdecl: our icons' hashes get our textures (the categories', then SETTINGS')
+// GetTextureInfo(hash, default, unloaded), cdecl: our icons' hashes get our textures (the categories', then Configuration's)
 X86_EXTERN_FUNC(__imp__sub_000C5900);
 X86_FUNC(sub_000C5900) {
     uint32_t icon = kernel::R32(ctx.esp + 4) - kIconHashes;
@@ -818,7 +819,7 @@ X86_FUNC(sub_00128AB0) {
             if (from != m.after_icons) continue;
             g_settings_next = false;
             g_settings_react = m.options_react;
-            // SETTINGS (icon kCount) beside OPTIONS
+            // Configuration (icon kCount) beside OPTIONS
             AddIcons(ctx, menu, settings::kCount, settings::kCount + 1);
             PlaceBeside(menu, m.options_vtable);
         }
@@ -834,7 +835,7 @@ X86_FUNC(sub_00128AB0) {
     }
 }
 
-// the scroller's add (option), thiscall: SETTINGS' UIOptionsMain takes none of the game's icons
+// the scroller's add (option), thiscall: Configuration's UIOptionsMain takes none of the game's icons
 X86_EXTERN_FUNC(__imp__sub_0012A120);
 X86_FUNC(sub_0012A120) {
     uint32_t from = kernel::R32(ctx.esp), option = kernel::R32(ctx.esp + 4);
@@ -859,7 +860,7 @@ X86_FUNC(sub_0012A030) {
     if (it->second < settings::kCount)
         name = CategoryTitle(it->second);
     else
-        name = "SETTINGS";
+        name = app::Ui("Configuration", false);
     for (uint32_t label : kMainLabels) Print(ctx, kernel::R32(menu + label), name);
     ctx.eax = eax;
 }
@@ -927,9 +928,9 @@ X86_FUNC(sub_000EE570) {
 }
 
 // SwitchPackage (name, arg, 0, 0), thiscall: an options screen of ours leaving for the options (0x105479) comes back
-// to SETTINGS' icons; SETTINGS' own switches (into its list, into a category's screen) keep it; any other switch ends
+// to Configuration's icons; Configuration's own switches (into its list, into a category's screen) keep it; any other switch ends
 // it (LeaveSettings): left by B for the main menu or the ordinary pause, the next UIOptionsMain is the game's and the
-// main menu's next Accept fade no longer reads our options flag (0x1169A6: Quick Race opened SETTINGS)
+// main menu's next Accept fade no longer reads our options flag (0x1169A6: Quick Race opened Configuration)
 X86_EXTERN_FUNC(__imp__sub_000EB160);
 X86_FUNC(sub_000EB160) {
     uint32_t name = kernel::R32(ctx.esp + 4);
