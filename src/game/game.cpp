@@ -312,6 +312,33 @@ X86_FUNC(sub_000D1440) {
     ctx.esp += 4;
 }
 
+// EA's file streams ("STRM", the system's handles 16 bytes each at +0x34): the stream thread hands a handle its data
+// in 0x871D0, under the system's critical section (+8, entered by 0x2BC401/left by 0x2BC40C with the system + 4),
+// adding to the bytes ready (+8) and then, from none, setting the first block (+0xC). The reader 0x87A40 (cdecl, the
+// handle) checks the bytes and takes the block before it enters the section: on a single core the window was a few
+// instructions, on the phone's cores (and stores out of order) the movies read a block not set yet, 0xEEEEEEEE from
+// bMalloc's fill of a fresh handle (0x539CE), a SIGSEGV as a movie started (0x102B10) or stopped (0xEB580): the boot's
+// crash in guest 14. The whole read holds the section (recursive: the reader's own enter nests). Rangga's fix
+// (MostWanted-Android 6733577)
+X86_EXTERN_FUNC(__imp__sub_00087A40);
+X86_EXTERN_FUNC(sub_002BC401);
+X86_EXTERN_FUNC(sub_002BC40C);
+X86_FUNC(sub_00087A40) {
+    constexpr uint32_t kStrm = 0x4D525453;
+    uint32_t handle = kernel::R32(ctx.esp + 4);
+    uint32_t system = handle ? kernel::R32(handle) : 0;
+    if (!system || !mem::IsCommitted(system) || kernel::R32(system) != kStrm) return __imp__sub_00087A40(ctx, base);
+    ctx.ecx = system + 4;
+    X86_PUSH32(0);
+    sub_002BC401(ctx, base);
+    __imp__sub_00087A40(ctx, base);
+    uint32_t result = ctx.eax;
+    ctx.ecx = system + 4;
+    X86_PUSH32(0);
+    sub_002BC40C(ctx, base);
+    ctx.eax = result;
+}
+
 X86_EXTERN_FUNC(__imp__sub_00116230);
 X86_FUNC(sub_00116230) {
     game::SkipMovie(ctx, 0);
