@@ -116,4 +116,9 @@ JNIEXPORT void JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeOpenSettings
     game::RequestOpenSettings(category);
 }
 
+// GameActivity's ☰ card: true as it opens (a race with no menu up pauses), false on its Resume (src/game/settings_menu.cpp)
+JNIEXPORT void JNICALL Java_com_ryuna_nfsmw2005x_GameActivity_nativeCardPause(JNIEnv*, jclass, jboolean pause) {
+    game::RequestCardPause(pause);
+}
+
 }  // extern "C"

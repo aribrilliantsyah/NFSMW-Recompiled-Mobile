@@ -654,6 +654,9 @@ uint32_t g_seen_gen = 0;        // the generation the timeout runs for, from g_s
 uint64_t g_seen_at = 0;
 bool g_open = false;            // a SETTINGS session (its list or a category screen of ours) is up
 bool g_flag_ours = false;       // OpenRequested set the FEDatabase options flag, not a game's OPTIONS
+// the ☰ card (RequestCardPause): 1 pause, 2 resume, 0 none; game thread: the race's pause is the card's own
+std::atomic<int> g_card{0};
+bool g_card_paused = false;
 
 uint64_t NowMs() { return TouchNowMs(); }
 
@@ -702,6 +705,7 @@ bool OpenRequested(X86Context& ctx, int category) {
         package = pause ? kPauseMainFng : kMainMenuSubFng;
     }
     g_open = true;
+    g_card_paused = false;  // the settings open over the card's pause: the pause menu's Resume is the player's now
     CallThis(ctx, R32(kFEng), kSwitchPackage, {package, pause ? 1u : 0u, 0, 0});
     return true;
 }
@@ -717,8 +721,31 @@ void RequestOpenSettings(int category) {
 
 bool SettingsTakePause() { return g_want_start.exchange(false); }
 
+void RequestCardPause(bool pause) { g_card = pause ? 1 : 2; }
+
+namespace {
+// the card's request: pause a race with no menu up (one START), and on its Resume press START again only if the
+// card's START is what brought the ordinary pause menu up and it is still the one taking the pad
+void CardTick() {
+    int card = g_card.exchange(0);
+    if (!card) return;
+    uint32_t package = FeInputPackage();
+    if (card == 1) {
+        g_card_paused = false;
+        if (Racing() && !PauseMenu(package) && !FeMenuShown() && !g_handshake_gen) {
+            g_want_start = true;
+            g_card_paused = true;
+        }
+    } else {
+        if (g_card_paused && Racing() && OrdinaryPause(package)) g_want_start = true;
+        g_card_paused = false;
+    }
+}
+}  // namespace
+
 // game thread, after FEngine::Update (hud_layout.cpp's wrapper)
 void SettingsTick(X86Context& ctx) {
+    CardTick();
     uint64_t mail = g_mail.load();
     uint32_t gen = uint32_t(mail >> 32);
     if (gen == g_done_gen) return;
@@ -736,7 +763,8 @@ void SettingsTick(X86Context& ctx) {
         if (!OrdinaryPause(package)) {
             // no menu up: START once a handshake (taps meanwhile are the same handshake); another menu (a pursuit's
             // result, a dialog, the pause menu's own options): wait for it to go
-            if (!PauseMenu(package) && !FeMenuShown() && !g_handshake_gen) {
+            // the card's START is the same pause (its Game settings tapped before the pause menu came up)
+            if (!PauseMenu(package) && !FeMenuShown() && !g_handshake_gen && !g_card_paused) {
                 g_handshake_gen = gen;
                 g_want_start = true;
             }

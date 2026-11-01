@@ -15,6 +15,7 @@ import android.view.InputDevice;
 import android.view.InputEvent;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
@@ -42,6 +43,9 @@ public class GameActivity extends SDLActivity {
     /** The overlay's ☰: the game's settings, -1 their categories, else one; in a race it pauses first
      *  (src/game/settings_menu.cpp). */
     static native void nativeOpenSettings(int category);
+    /** The ☰ card: true as it opens (a race with no menu up pauses), false on its Resume; that START only if the
+     *  card's paused the race (src/game/settings_menu.cpp). */
+    static native void nativeCardPause(boolean pause);
     // A controller some phones' game services pass on as a virtual device (MIUI's took a DualShock 4 on a Redmi
     // Note 8 Pro): SDL sees no controller in it and drops its input. Its buttons and sticks go to port 0 here.
     private static native void nativeLooseKey(int keyCode, boolean down);
@@ -116,17 +120,23 @@ public class GameActivity extends SDLActivity {
         if (mPad != null) mPad.onPauseResume(true);
     }
 
-    /** The ☰: the touch controls' settings (mode, MOBILE's steering, tilt, opacity, size, the editors), which the
-     *  game's own SETTINGS leave to the overlay, then the game's settings, resume and leaving for the launcher. Every
-     *  change goes to mostwanted.toml under its lock (TouchControllerView.settingsRow), as the launcher's do. */
+    /** The ☰: a floating card over a dimmed game (the touch controls' settings: mode, MOBILE's steering, tilt,
+     *  opacity, size, the editors; then the game's settings, resume and leaving for the launcher). Opening it pauses a
+     *  race with no menu up (nativeCardPause, one START); Resume, a tap on the scrim or Back unpause only if the card
+     *  paused it. Every change goes to mostwanted.toml under its lock (TouchControllerView.settingsRow), as the
+     *  launcher's do. */
     private void showMenu() {
         if (mPad == null) return;
         UiKit ui = new UiKit(this);
+        // the card: the touch rows scroll when the screen is short; GAME (Resume...) stays at its foot, always in view
+        android.widget.LinearLayout card = ui.column();
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
         android.widget.LinearLayout col = ui.column();
-        col.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(10));
+        col.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), 0);
         scroll.addView(col);
+        card.addView(scroll, new android.widget.LinearLayout.LayoutParams(-1, 0, 1f));
         android.app.AlertDialog[] dlg = new android.app.AlertDialog[1];
+        boolean[] resume = {true};  // the card closing hands the game back (Resume, scrim, Back); false: it goes on
         Runnable[] fill = new Runnable[1];
         fill[0] = () -> {
             col.removeAllViews();
@@ -153,39 +163,69 @@ public class GameActivity extends SDLActivity {
             android.widget.LinearLayout edits = new android.widget.LinearLayout(this);
             edits.setPadding(0, ui.dp(6), 0, ui.dp(10));
             android.widget.LinearLayout.LayoutParams half = new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
-            edits.addView(ui.secondary("Edit buttons", v -> { dlg[0].dismiss(); mPad.openEditor(); }), half);
+            edits.addView(ui.secondary("Edit buttons", v -> { resume[0] = false; dlg[0].dismiss(); mPad.openEditor(); }), half);
             android.widget.LinearLayout.LayoutParams half2 = new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
             half2.leftMargin = ui.dp(8);
             edits.addView(ui.secondary("Edit HUD (next start)", v -> {
+                resume[0] = false;
                 dlg[0].dismiss();
                 startActivity(new Intent(this, HudEditorActivity.class));
             }), half2);
             col.addView(edits);
-            col.addView(ui.section("GAME"));
-            android.widget.LinearLayout game = new android.widget.LinearLayout(this);
-            game.addView(ui.secondary("Resume", v -> dlg[0].dismiss()),
-                    new android.widget.LinearLayout.LayoutParams(0, -2, 1f));
-            android.widget.LinearLayout.LayoutParams gp = new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
-            gp.leftMargin = ui.dp(8);
-            game.addView(ui.secondary("Game settings", v -> { dlg[0].dismiss(); nativeOpenSettings(-1); }), gp);
-            android.widget.LinearLayout.LayoutParams gp2 = new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
-            gp2.leftMargin = ui.dp(8);
-            game.addView(ui.secondary("Exit to launcher", v -> { dlg[0].dismiss(); exitToLauncher(); }), gp2);
-            col.addView(game);
         };
         fill[0].run();
-        dlg[0] = new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
-            .setView(scroll)
-            .create();
+        android.widget.LinearLayout foot = ui.column();
+        foot.setPadding(ui.dp(18), ui.dp(4), ui.dp(18), ui.dp(14));
+        foot.addView(ui.section("GAME"));
+        android.widget.LinearLayout game = new android.widget.LinearLayout(this);
+        game.addView(ui.secondary("Resume", v -> dlg[0].dismiss()),
+                new android.widget.LinearLayout.LayoutParams(0, -2, 1f));
+        android.widget.LinearLayout.LayoutParams gp = new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
+        gp.leftMargin = ui.dp(8);
+        game.addView(ui.secondary("Game settings", v -> {
+            resume[0] = false;
+            dlg[0].dismiss();
+            nativeOpenSettings(-1);
+        }), gp);
+        android.widget.LinearLayout.LayoutParams gp2 = new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
+        gp2.leftMargin = ui.dp(8);
+        game.addView(ui.secondary("Exit to launcher", v -> {
+            resume[0] = false;
+            dlg[0].dismiss();
+            exitToLauncher();
+        }), gp2);
+        foot.addView(game);
+        card.addView(foot);
+        dlg[0] = new android.app.AlertDialog(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar) {
+            // the ☰'s own touch goes on into the card (it opens on its down): its up is no tap on the scrim
+            private boolean armed;
+            @Override public boolean onTouchEvent(android.view.MotionEvent e) {
+                if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) armed = true;
+                return armed ? super.onTouchEvent(e) : true;
+            }
+        };
+        dlg[0].setView(card);
+        dlg[0].setCanceledOnTouchOutside(true);  // the scrim: a tap outside the card is Resume
         dlg[0].setOnShowListener(x -> {
             Window w = dlg[0].getWindow();
             if (w != null) {
-                w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(UiKit.CARD));
-                w.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels * 3 / 5, ui.dp(560)),
-                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                // the card: rounded, centred, as tall as its rows up to 88% of the screen (then its rows scroll)
+                w.setBackgroundDrawable(ui.box(UiKit.CARD, UiKit.LINE, 20));
+                w.setGravity(android.view.Gravity.CENTER);
+                w.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+                w.setDimAmount(.6f);
+                android.util.DisplayMetrics m = getResources().getDisplayMetrics();
+                int width = Math.min(m.widthPixels * 3 / 5, ui.dp(560));
+                card.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+                w.setLayout(width, Math.min(card.getMeasuredHeight(), m.heightPixels * 88 / 100));
             }
         });
-        dlg[0].setOnDismissListener(x -> hideSystemBars());
+        dlg[0].setOnDismissListener(x -> {
+            if (resume[0]) nativeCardPause(false);
+            hideSystemBars();
+        });
+        nativeCardPause(true);
         dlg[0].show();
     }
 
