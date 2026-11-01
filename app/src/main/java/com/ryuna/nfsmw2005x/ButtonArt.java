@@ -30,9 +30,10 @@ final class ButtonArt {
         // a menu prompt whose action no icon names: a neutral mark, never the pad's letter
         DOT }
 
-    // the pad's colours: A B X Y, grey for the pedals, shoulders and system buttons, White's white
+    // the pad's colours: A B X Y, grey for the pedals, shoulders and system buttons, White's white; MOBILE's START
+    // (pause) in Most Wanted's orange and BACK (select) in violet, apart from the face buttons'
     static final int COLOR_A = 0xFF3FB950, COLOR_B = 0xFFE5534B, COLOR_X = 0xFF4493F8, COLOR_Y = 0xFFE3B341,
-            COLOR_GREY = 0xFF9AA0A6, COLOR_WHITE = 0xFFE8E8E8;
+            COLOR_GREY = 0xFF9AA0A6, COLOR_WHITE = 0xFFE8E8E8, COLOR_START = 0xFFF28C1C, COLOR_SELECT = 0xFFA371F7;
     /** drawDpad's pressedMask: the XBOX_GAMEPAD_DPAD_* bits. */
     static final int DPAD_UP = 0x01, DPAD_DOWN = 0x02, DPAD_LEFT = 0x04, DPAD_RIGHT = 0x08;
 

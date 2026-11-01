@@ -38,8 +38,9 @@ import java.util.Set;
  * (.work/nfsmw_buttons_mockup.html) has them:
  *   MOBILE  for driving: steering (stick, arrows, a wheel or tilting the
  *           phone), the D-pad and NOS on the left, the face buttons and the
- *           pedals on the right, the gear lever in the middle, BACK/☰/START
- *           and the camera on top. While a game menu is up the race
+ *           pedals on the right, the gear lever in the middle, the ☰ top
+ *           centre, the camera top left, BACK and START (pause) top right
+ *           in a race and its pause menu only. While a game menu is up the race
  *           controls give way to its prompts as icon buttons
  *           (GameActivity.nativeMenuPrompts).
  *   XBOX    the original Xbox controller, the same in races and menus.
@@ -56,7 +57,7 @@ public final class TouchControllerView extends View {
 
     private static final String PREFS = "nfsmw_touch";
     /** Bump when the factory layouts change. */
-    private static final int LAYOUT_VERSION = 7;
+    private static final int LAYOUT_VERSION = 8;
     private static final boolean DEBUG = android.util.Log.isLoggable("nfsmw-pad", android.util.Log.DEBUG);
     private static final int MODES = 2;
     private static final String[] MODE_NAMES = {"XBOX", "MOBILE"};      // Settings.MODE_XBOX, MODE_MOBILE
@@ -91,6 +92,7 @@ public final class TouchControllerView extends View {
         int click;                          // a stick or the gear lever: the button a tap on it clicks (L3, R3)
         boolean menu;                       // the ☰: GameActivity's menu, no pad button
         boolean inMenus;                    // MOBILE: still shown while a game menu is up
+        boolean inRace;                     // MOBILE: shown in a race, its pause menu too (BACK, START)
         int visibleIn;                      // bit per mode
         final float[] fx = new float[MODES], fy = new float[MODES], fs = new float[MODES];
         final float[] px = new float[MODES], py = new float[MODES], ps = new float[MODES];
@@ -206,7 +208,7 @@ public final class TouchControllerView extends View {
 
     // The game's own menus (native/touch.cpp): touches off the controls reach SDLSurface and are FEng's pointer,
     // swipes and the keyboard's keys. In MOBILE the overlay has three states: race (the race controls), menu (the
-    // menu's prompts) and neither (loading, movies, fades between menus: the top row alone), so the race controls
+    // menu's prompts) and neither (loading, movies, fades between menus: the ☰ alone), so the race controls
     // never flash between two menus.
     private static final long MENU_POLL_MS = 250;
     // a race shows after this many polls in a row in one with no menu (a loading screen's last frames are the flow's
@@ -401,11 +403,14 @@ public final class TouchControllerView extends View {
         // One left margin for the left column, the pedals' distance from the right edge: the D-pad, stick, wheel and
         // left arrow put their left edge on it.
         final float margin = .0248f * w;
-        top(add(pill("back", ButtonArt.Icon.BACK, BACK)).at(MO, .43f, .07f));
+        // the top row like a mobile racing game's: the ☰ in the middle (always), the camera top left, BACK (restart
+        // icon) and START (pause) top right in coloured rings the camera's size, mirroring it, only in a race and its
+        // pause menu, where START is wanted
+        race(add(round("back", ButtonArt.Icon.RESTART, null, null, BACK, -1, 0, 1.2f, ButtonArt.COLOR_SELECT))).at(MO, .874f, .09f);
         top(menu(add(round("menu", ButtonArt.Icon.MENU, null, null, 0, -1, 0, .9f, ButtonArt.COLOR_GREY)))).at(MO, .50f, .07f);
-        top(add(pill("start", ButtonArt.Icon.START, START)).at(MO, .57f, .07f));
+        race(add(round("start", ButtonArt.Icon.START, null, null, START, -1, 0, 1.2f, ButtonArt.COLOR_START))).at(MO, .95f, .09f);
         // Black is the camera: the ring and its icon alone, no badge (Black has no letter)
-        add(round("black", ButtonArt.Icon.CAMERA, null, null, 0, BLACK, 0, .9f, ButtonArt.COLOR_GREY)).at(MO, .95f, .07f);
+        add(round("black", ButtonArt.Icon.CAMERA, null, null, 0, BLACK, 0, 1.2f, ButtonArt.COLOR_GREY)).at(MO, .05f, .09f);
         Control dpad = add(new Control("dpad", null, null, null, K_DPAD, 0, -1, 0, 0, .8f, 0));
         place(dpad, MO, margin + .8f * u, .41f * h);
         add(round("nos", ButtonArt.Icon.NOS, "B", null, 0, B, 0, 1.5f, ButtonArt.COLOR_B)).at(MO, .219f, .539f);
@@ -481,8 +486,11 @@ public final class TouchControllerView extends View {
 
     private Control menu(Control c) { c.menu = true; return c; }
 
-    /** MOBILE's top row stays over the game's menus too. */
+    /** MOBILE's ☰ stays over the game's menus too. */
     private Control top(Control c) { c.inMenus = true; return c; }
+
+    /** MOBILE: in a race, its pause menu too, never in the front end or a loading screen. */
+    private Control race(Control c) { c.inRace = true; return c; }
 
     /** Factory position in pixels for a mode (stored as fractions). */
     private void place(Control c, int mode, float px, float py) {
@@ -511,10 +519,10 @@ public final class TouchControllerView extends View {
         invalidate();
     }
 
-    /** Drawn and touchable now: in its mode, and in MOBILE outside a race (a menu, a loading screen) only the top
-     *  row. */
+    /** Drawn and touchable now: in its mode, and in MOBILE outside the race controls only the ☰, plus BACK and START
+     *  while a race is on (its pause menu). */
     private boolean visible(Control c) {
-        return c.shown() && (editing || (racing && prompts == null) || c.inMenus);
+        return c.shown() && (editing || (racing && prompts == null) || c.inMenus || (c.inRace && racing));
     }
 
     private void layoutUi() {
@@ -717,7 +725,7 @@ public final class TouchControllerView extends View {
     /** nativeMenuPrompts' { icon, pad, label, ... } as buttons in the screen's side columns, off the game's menu (in
      *  the middle): A/B/X/Y up the right edge, the main action lowest by the thumb, BACK above it, the rest above
      *  that; the triggers (ZOOM OUT over ZOOM IN) up the left edge, where the D-pad is hidden in menus. Both columns
-     *  keep the pedals' margin from the edge and start under the top row (BACK/☰/START, the camera). */
+     *  keep the pedals' margin from the edge and start under the top row (the camera, ☰, BACK and START). */
     private List<Prompt> layoutPrompts(String[] p) {
         List<Prompt> out = new ArrayList<>(), face = new ArrayList<>();
         float r = 1.15f / 2 * unit, margin = .0248f * width, pitch = 2 * r + .5f * unit;
