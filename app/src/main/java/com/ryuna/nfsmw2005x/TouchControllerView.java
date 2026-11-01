@@ -159,7 +159,7 @@ public final class TouchControllerView extends View {
     /** One of a game menu's prompts as a MOBILE button. */
     private static final class Prompt {
         final int pad;                      // PROMPT_PADS' index: 0 A, 1 B, 2 X, 3 Y, 4 LT, 5 RT
-        final ButtonArt.Icon icon;          // null: the pad's letter
+        final ButtonArt.Icon icon;          // its action's, DOT when none fits
         float cx, cy, r;
 
         Prompt(int pad, ButtonArt.Icon icon) { this.pad = pad; this.icon = icon; }
@@ -208,6 +208,7 @@ public final class TouchControllerView extends View {
     // swipes and the keyboard's keys. In MOBILE the race controls give way to the menu's prompts while one is up.
     private static final long MENU_POLL_MS = 250;
     private String[] lastPrompts;           // nativeMenuPrompts' last answer
+    private final java.util.Set<String> unknownPrompts = new java.util.HashSet<>();  // labels logged once
     private List<Prompt> prompts;           // null: no game menu up, or XBOX, which keeps its layout
     private final Runnable menuPoll = new Runnable() {
         @Override public void run() {
@@ -620,15 +621,12 @@ public final class TouchControllerView extends View {
         }
     }
 
-    /** A menu prompt: its action's icon in a ring of its pad button's colour; no icon fits, the pad's letter. */
+    /** A menu prompt: its action's icon in a ring of its pad button's colour, no letter and no badge (the badge is the
+     *  race controls' alone); no icon fits, a neutral dot (layoutPrompts logs the label). */
     private void drawPrompt(Canvas canvas, Prompt p) {
         float op = opacity[mode];
         boolean on = pulsePad == p.pad;
-        int color = PROMPT_COLORS[p.pad];
-        if (p.icon != null)
-            ButtonArt.drawRound(canvas, p.cx, p.cy, p.r, color, p.icon, null, on, op);
-        else
-            ButtonArt.drawRoundLetter(canvas, p.cx, p.cy, p.r, color, PROMPT_PADS[p.pad], PROMPT_PADS[p.pad], on, op);
+        ButtonArt.drawRound(canvas, p.cx, p.cy, p.r, PROMPT_COLORS[p.pad], p.icon, null, on, op);
     }
 
     private int currentDpad;
@@ -709,7 +707,14 @@ public final class TouchControllerView extends View {
         for (int i = 0; i + 2 < p.length; i += 3) {
             int pad = Arrays.asList(PROMPT_PADS).indexOf(p[i + 1]);
             if (pad < 0) continue;
-            Prompt b = new Prompt(pad, ButtonArt.iconFor(p[i], p[i + 2]));
+            ButtonArt.Icon icon = ButtonArt.iconFor(p[i], p[i + 2]);
+            if (icon == null) {
+                // the table's gap: once a label, so it can be added (native/prompt_icons.cpp, ButtonArt.WORDS)
+                if (unknownPrompts.add(p[i + 2]))
+                    android.util.Log.w("nfsmw-pad", "prompt without icon: " + p[i + 1] + " \"" + p[i + 2] + "\"");
+                icon = ButtonArt.Icon.DOT;
+            }
+            Prompt b = new Prompt(pad, icon);
             b.r = r;
             if (pad >= 4) {
                 // ZOOM OUT / ZOOM IN where they zoom (the showcase, the map); unnamed (track select's region

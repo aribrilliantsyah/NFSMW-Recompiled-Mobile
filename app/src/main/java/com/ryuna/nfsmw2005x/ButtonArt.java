@@ -26,7 +26,9 @@ final class ButtonArt {
         ZOOM_IN, ZOOM_OUT, ACCEPT, RESTART, STATS, EXIT, CANCEL,
         // the menu prompts' actions (native/prompt_icons.cpp's keys)
         EYE, EYE_OFF, INFO, HELP, DELETE, EDIT, CART, CASH, MAP, OPTIONS, PLAY, LIST, ROTATE, FORWARD, SEND, SORT,
-        FILTER, SAVE, CHAT, PERSON, PREV, NEXT }
+        FILTER, SAVE, CHAT, PERSON, PREV, NEXT,
+        // a menu prompt whose action no icon names: a neutral mark, never the pad's letter
+        DOT }
 
     // the pad's colours: A B X Y, grey for the pedals, shoulders and system buttons, White's white
     static final int COLOR_A = 0xFF3FB950, COLOR_B = 0xFFE5534B, COLOR_X = 0xFF4493F8, COLOR_Y = 0xFFE3B341,
@@ -87,6 +89,7 @@ final class ButtonArt {
             // the triggers' previous / next (a region, a page, a list's tab): a bar and the chevron towards it
             case PREV: return "<path d=\"M6 5v14\"/><path d=\"M17.5 5.5L11 12l6.5 6.5\"/>";
             case NEXT: return "<path d=\"M18 5v14\"/><path d=\"M6.5 5.5L13 12l-6.5 6.5\"/>";
+            case DOT: return "<circle cx=\"12\" cy=\"12\" r=\"2.5\" fill=\"currentColor\"/>";
         }
         throw new IllegalArgumentException(String.valueOf(i));
     }
@@ -103,7 +106,7 @@ final class ButtonArt {
     }
 
     // the English labels' words, tried in order when native knows no hash for the string (one set by the game's code
-    // as text, or a string not in its table); the language's own text past English does not match and gets the letter
+    // as text, or a string not in its table); the language's own text past English does not match and gets the dot
     private static final Object[][] WORDS = {
         {Pattern.compile("^ZOOM OUT$|^ZOOM ALL$"), Icon.ZOOM_OUT},
         {Pattern.compile("^ZOOM( IN)?$"), Icon.ZOOM_IN},
@@ -146,7 +149,7 @@ final class ButtonArt {
         return null;
     }
 
-    /** A prompt's icon: native's key first, then the label's English words; null draws the pad's letter. */
+    /** A prompt's icon: native's key first, then the label's English words; null for none (the overlay's DOT). */
     static Icon iconFor(String key, String label) {
         Icon i = iconForKey(key);
         return i != null ? i : iconForPrompt(label);
@@ -638,14 +641,6 @@ final class ButtonArt {
         } else if (badge != null && !badge.trim().isEmpty()) {
             text(c, badge, cx, cy + d * .04f, d * .36f, opacity);
         }
-    }
-
-    /** A round button with a letter in the middle and a badge on its top edge (a menu prompt no icon fits). */
-    static void drawRoundLetter(Canvas c, float cx, float cy, float r, int color, String letter, String badge,
-                                boolean pressed, float opacity) {
-        drawRound(c, cx, cy, r, color, null, letter, pressed, opacity);
-        float d = 2 * r;
-        badge(c, cx, cy - r + d * .03f, d * .17f, color, badge, opacity);
     }
 
     /** Builds the mockup's roundPoly: straight sides, each corner a quadratic of up to r along both sides. */
