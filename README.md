@@ -17,7 +17,7 @@
 </div>
 
 > [!IMPORTANT]
-> No game data is included. You need your own copy of the Xbox disc (USA Black Edition, `default.xbe` SHA-1 `f636a16af04171089f879a4bed646e185c734233`).
+> No game data is included. You need your own Xbox disc of *Need for Speed: Most Wanted Black Edition* (NTSC-U, title ID `0x4541007B`, `default.xbe` SHA-1 `f636a16af04171089f879a4bed646e185c734233`).
 
 ## 🧩 What this is
 The engine is [MostWanted-Android](https://github.com/RanggaCasper/MostWanted-Android) by RanggaCasper: the game statically recompiled to arm64 with [XboxXBE-Recomp](https://github.com/TGP482/XboxXBE-Recomp), Direct3D 8 drawn with Vulkan, no emulator. His fixes and patches come with it (widescreen, the minimap, the HUD layout, the game's options), and the later ones are taken in as he makes them.

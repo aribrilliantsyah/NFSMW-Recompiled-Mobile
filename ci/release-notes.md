@@ -17,7 +17,7 @@
 </p>
 
 > [!IMPORTANT]
-> This release contains **no game assets**. You need the files from your own legally acquired copy of *Need for Speed: Most Wanted* (Xbox, Black Edition, USA release).
+> This release contains **no game data**. You need your own Xbox disc of *Need for Speed: Most Wanted Black Edition* (NTSC-U, title ID `0x4541007B`).
 
 ## 📦 Download
 
