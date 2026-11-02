@@ -138,7 +138,7 @@ jobs:
         if: env.RELEASE == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          name: Most Wanted for Android ${{ github.ref_name }}
+          name: NFS Most Wanted (Xbox) for Android ${{ github.ref_name }}
           body_path: ${{ runner.temp }}/release-notes.md
           files: MostWanted-${{ steps.version.outputs.name }}.apk
           make_latest: true

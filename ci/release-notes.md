@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/{{REPO}}/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="96" alt="Most Wanted">
+  <img src="https://raw.githubusercontent.com/{{REPO}}/main/docs/assets/appicon.png" width="96" alt="NFS Most Wanted">
 </p>
 
-<h1 align="center">Most Wanted for Android {{VERSION}}</h1>
+<h1 align="center">NFS Most Wanted (Xbox) for Android {{VERSION}}</h1>
 
 <p align="center">
   An unofficial native Android port of the original Xbox version of <b>Need for Speed: Most Wanted</b>,<br>
